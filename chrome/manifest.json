@@ -5,6 +5,7 @@
   "description": "A keyboard-first visual overview of open tabs across Chrome windows.",
   "permissions": [
     "tabs",
+    "tabGroups",
     "sessions",
     "storage"
   ],

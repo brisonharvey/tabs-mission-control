@@ -19,6 +19,7 @@ const state = {
 };
 
 const accentCache = new Map();
+const tabGroupCache = new Map();
 
 const elements = {
   searchInput: document.getElementById("search-input"),
@@ -155,7 +156,8 @@ function updateVisibleTabs(preferredTabId = state.selectedTabId) {
 
         return (
           tab.title?.toLowerCase().includes(query) ||
-          tab.url?.toLowerCase().includes(query)
+          tab.url?.toLowerCase().includes(query) ||
+          tab.groupTitle?.toLowerCase().includes(query)
         );
       });
 
@@ -317,6 +319,19 @@ function getWindowLabel(group) {
   return group.windowId === state.sourceWindowId ? "Focused now" : "Browser window";
 }
 
+function getTabGroupLabel(tab) {
+  const groupTitle = tab.groupTitle?.trim();
+  if (groupTitle) {
+    return groupTitle;
+  }
+
+  if (typeof tab.groupColor === "string" && tab.groupColor !== "grey") {
+    return `${tab.groupColor[0].toUpperCase()}${tab.groupColor.slice(1)} group`;
+  }
+
+  return "Grouped";
+}
+
 function renderSummary() {
   const query = elements.searchInput.value.trim();
   const visibleWindowCount = state.visibleWindowGroups.length;
@@ -389,6 +404,7 @@ function renderTabCard(tab) {
   const previewDomain = card.querySelector(".preview-domain");
   const title = card.querySelector(".tab-title");
   const url = card.querySelector(".tab-url");
+  const tabGroupPill = card.querySelector(".tab-group-pill");
   const closeButton = card.querySelector(".close-button");
 
   card.dataset.tabId = String(tab.id);
@@ -403,6 +419,16 @@ function renderTabCard(tab) {
   url.textContent = getShortUrl(tab.url || "");
   previewFaviconFallback.textContent = getPreviewLabel(tab);
   previewDomain.textContent = getTabHost(tab.url || "");
+
+  if (tab.groupId >= 0) {
+    tabGroupPill.hidden = false;
+    tabGroupPill.textContent = getTabGroupLabel(tab);
+    tabGroupPill.title = getTabGroupLabel(tab);
+  } else {
+    tabGroupPill.hidden = true;
+    tabGroupPill.textContent = "";
+    tabGroupPill.removeAttribute("title");
+  }
 
   favicon.src = tab.favIconUrl || FALLBACK_ICON;
   favicon.addEventListener("error", () => {
@@ -817,6 +843,47 @@ async function loadRecentlyClosedSessions() {
     }));
 }
 
+async function hydrateChromeTabGroups(tabs) {
+  if (!extensionApi.tabGroups?.get) {
+    return tabs;
+  }
+
+  const uniqueGroupIds = [...new Set(
+    tabs
+      .map((tab) => tab.groupId)
+      .filter((groupId) => typeof groupId === "number" && groupId >= 0)
+  )];
+
+  await Promise.all(
+    uniqueGroupIds.map(async (groupId) => {
+      if (tabGroupCache.has(groupId)) {
+        return;
+      }
+
+      try {
+        const group = await callApi(extensionApi.tabGroups.get.bind(extensionApi.tabGroups), groupId);
+        tabGroupCache.set(groupId, group);
+      } catch (error) {
+        console.error("Failed to load tab group", error);
+      }
+    })
+  );
+
+  return tabs.map((tab) => {
+    if (typeof tab.groupId !== "number" || tab.groupId < 0) {
+      return tab;
+    }
+
+    const group = tabGroupCache.get(tab.groupId);
+    return {
+      ...tab,
+      groupTitle: group?.title ?? "",
+      groupColor: group?.color ?? "grey",
+      groupCollapsed: Boolean(group?.collapsed)
+    };
+  });
+}
+
 async function loadWindowsAndTabs(options = {}) {
   if (state.sourceWindowId === null || Number.isNaN(state.sourceWindowId)) {
     const currentWindow = await callApi(
@@ -854,6 +921,13 @@ async function loadWindowsAndTabs(options = {}) {
       tabs
     };
   });
+
+  state.windowGroups = await Promise.all(
+    state.windowGroups.map(async (group) => ({
+      ...group,
+      tabs: await hydrateChromeTabGroups(group.tabs)
+    }))
+  );
 
   state.allTabs = state.windowGroups.flatMap((group) => group.tabs);
   updateVisibleTabs(options.preferredTabId ?? state.selectedTabId);
