@@ -188,6 +188,10 @@ input {
 }
 
 .tab-card {
+  --tab-accent: rgb(20, 99, 255);
+  --tab-accent-soft: rgba(20, 99, 255, 0.12);
+  --tab-accent-glow: rgba(20, 99, 255, 0.2);
+  --tab-accent-border: rgba(20, 99, 255, 0.32);
   appearance: none;
   width: 100%;
   text-align: left;
@@ -208,13 +212,17 @@ input {
 }
 
 .tab-card.is-selected {
-  border-color: var(--active-ring);
-  box-shadow: 0 0 0 4px rgba(20, 99, 255, 0.1);
+  border-color: var(--tab-accent-border);
+  box-shadow: 0 0 0 4px var(--tab-accent-soft);
 }
 
 .tab-card.is-active .tab-card-content {
-  border-color: rgba(20, 99, 255, 0.3);
-  background: linear-gradient(180deg, rgba(255, 255, 255, 0.95), rgba(238, 245, 255, 0.92));
+  border-color: var(--tab-accent-border);
+  background: linear-gradient(
+    180deg,
+    rgba(255, 255, 255, 0.95),
+    color-mix(in srgb, white 82%, var(--tab-accent) 18%)
+  );
 }
 
 .preview-shell,
@@ -226,7 +234,11 @@ input {
 .preview-shell {
   position: relative;
   height: 148px;
-  background: linear-gradient(135deg, rgba(24, 68, 145, 0.14), rgba(34, 184, 143, 0.12));
+  background: linear-gradient(
+    135deg,
+    color-mix(in srgb, white 78%, var(--tab-accent) 22%),
+    color-mix(in srgb, white 84%, var(--tab-accent) 16%)
+  );
   border: 1px solid rgba(255, 255, 255, 0.45);
   box-shadow: var(--shadow);
 }
@@ -236,7 +248,11 @@ input {
   inset: 0;
   background:
     linear-gradient(140deg, rgba(17, 38, 68, 0.08), transparent 58%),
-    linear-gradient(180deg, rgba(255, 255, 255, 0.6), rgba(230, 236, 244, 0.65));
+    linear-gradient(
+      180deg,
+      rgba(255, 255, 255, 0.58),
+      color-mix(in srgb, white 76%, var(--tab-accent) 24%)
+    );
 }
 
 .preview-content {
@@ -252,10 +268,11 @@ input {
   width: 52px;
   height: 52px;
   border-radius: 16px;
-  background: rgba(255, 255, 255, 0.82);
+  background: color-mix(in srgb, white 80%, var(--tab-accent) 20%);
   display: grid;
   place-items: center;
   box-shadow: var(--shadow-soft);
+  color: color-mix(in srgb, black 25%, var(--tab-accent) 75%);
   font-weight: 700;
   font-size: 1.15rem;
 }
@@ -268,6 +285,39 @@ input {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.close-button {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  z-index: 1;
+  width: 28px;
+  height: 28px;
+  border-radius: 999px;
+  display: grid;
+  place-items: center;
+  background: rgba(255, 255, 255, 0.86);
+  color: rgba(16, 32, 51, 0.72);
+  box-shadow: var(--shadow-soft);
+  opacity: 0;
+  transform: translateY(-4px) scale(0.94);
+  transition: opacity var(--transition), transform var(--transition),
+    background-color var(--transition), color var(--transition);
+  pointer-events: none;
+}
+
+.tab-card:hover .close-button,
+.tab-card:focus-visible .close-button,
+.tab-card:focus-within .close-button {
+  opacity: 1;
+  transform: translateY(0) scale(1);
+  pointer-events: auto;
+}
+
+.close-button:hover {
+  background: rgba(255, 255, 255, 0.96);
+  color: var(--tab-accent);
 }
 
 .tab-card-content {
@@ -301,8 +351,8 @@ input {
   min-height: 22px;
   padding: 2px 8px;
   border-radius: 999px;
-  background: rgba(20, 99, 255, 0.12);
-  color: var(--accent);
+  background: var(--tab-accent-soft);
+  color: color-mix(in srgb, black 25%, var(--tab-accent) 75%);
   font-size: 0.75rem;
   font-weight: 700;
   letter-spacing: 0.01em;

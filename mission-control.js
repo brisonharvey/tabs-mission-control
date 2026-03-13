@@ -7,9 +7,11 @@ const state = {
   allTabs: [],
   filteredTabs: [],
   pageIndex: 0,
-  selectedGlobalIndex: 0,
+  selectedTabId: null,
   sourceWindowId: null
 };
+
+const accentCache = new Map();
 
 const elements = {
   searchInput: document.getElementById("search-input"),
@@ -56,19 +58,20 @@ function getPreviewLabel(tab) {
   return host.slice(0, 1).toUpperCase();
 }
 
-function clampSelectedIndex() {
-  if (state.filteredTabs.length === 0) {
-    state.selectedGlobalIndex = 0;
-    state.pageIndex = 0;
-    return;
+function getSelectedIndex() {
+  if (!state.filteredTabs.length) {
+    return -1;
   }
 
-  const maxIndex = state.filteredTabs.length - 1;
-  state.selectedGlobalIndex = Math.min(state.selectedGlobalIndex, maxIndex);
+  const selectedIndex = state.filteredTabs.findIndex(
+    (tab) => tab.id === state.selectedTabId
+  );
+  if (selectedIndex >= 0) {
+    return selectedIndex;
+  }
 
-  const pageCount = getPageCount();
-  state.pageIndex = Math.min(state.pageIndex, pageCount - 1);
-  state.pageIndex = Math.max(state.pageIndex, 0);
+  state.selectedTabId = state.filteredTabs[0].id;
+  return 0;
 }
 
 function getPageCount() {
@@ -80,24 +83,52 @@ function getPageTabs() {
   return state.filteredTabs.slice(start, start + PAGE_SIZE);
 }
 
-function setSelection(globalIndex) {
+function ensureValidSelection() {
+  if (!state.filteredTabs.length) {
+    state.selectedTabId = null;
+    state.pageIndex = 0;
+    return;
+  }
+
+  const selectedIndex = getSelectedIndex();
+  const pageCount = getPageCount();
+  state.pageIndex = Math.max(0, Math.min(state.pageIndex, pageCount - 1));
+
+  if (selectedIndex < 0) {
+    state.selectedTabId = state.filteredTabs[0].id;
+  }
+}
+
+function setSelection(globalIndex, options = {}) {
   if (!state.filteredTabs.length) {
     return;
   }
 
   const nextIndex = Math.max(0, Math.min(globalIndex, state.filteredTabs.length - 1));
-  state.selectedGlobalIndex = nextIndex;
-  state.pageIndex = Math.floor(nextIndex / PAGE_SIZE);
-  render();
-  focusSelectedCard();
+  const nextPageIndex = Math.floor(nextIndex / PAGE_SIZE);
+  const shouldRender = nextPageIndex !== state.pageIndex || options.forceRender;
+  state.selectedTabId = state.filteredTabs[nextIndex].id;
+  state.pageIndex = nextPageIndex;
+
+  if (shouldRender) {
+    render();
+  } else {
+    renderSelectedState();
+  }
+
+  if (options.focus !== false) {
+    focusSelectedCard();
+  }
 }
 
 function focusSelectedCard() {
-  const selectedCard = elements.tabGrid.querySelector(".tab-card.is-selected");
+  const selectedCard = elements.tabGrid.querySelector(
+    `.tab-card[data-tab-id="${String(state.selectedTabId)}"]`
+  );
   selectedCard?.focus();
 }
 
-function updateFilteredTabs() {
+function updateFilteredTabs(preferredTabId = state.selectedTabId) {
   const query = elements.searchInput.value.trim().toLowerCase();
 
   state.filteredTabs = state.allTabs.filter((tab) => {
@@ -117,25 +148,150 @@ function updateFilteredTabs() {
   }
 
   if (!state.filteredTabs.length) {
-    state.selectedGlobalIndex = 0;
+    state.selectedTabId = null;
     return;
   }
 
-  const activeMatchIndex = state.filteredTabs.findIndex((tab) => tab.active);
-  if (!query && activeMatchIndex >= 0) {
-    state.selectedGlobalIndex = activeMatchIndex;
-    state.pageIndex = Math.floor(activeMatchIndex / PAGE_SIZE);
+  const preferredMatch = state.filteredTabs.find((tab) => tab.id === preferredTabId);
+  if (preferredMatch) {
+    state.selectedTabId = preferredMatch.id;
+    state.pageIndex = Math.floor(getSelectedIndex() / PAGE_SIZE);
     return;
   }
 
-  state.selectedGlobalIndex = Math.min(
-    state.selectedGlobalIndex,
-    state.filteredTabs.length - 1
-  );
+  const activeMatch = state.filteredTabs.find((tab) => tab.active);
+  if (activeMatch) {
+    state.selectedTabId = activeMatch.id;
+    state.pageIndex = Math.floor(getSelectedIndex() / PAGE_SIZE);
+    return;
+  }
+
+  state.selectedTabId = state.filteredTabs[0].id;
+  state.pageIndex = 0;
+}
+
+function hashString(input) {
+  let hash = 0;
+  for (const character of input) {
+    hash = (hash * 31 + character.charCodeAt(0)) >>> 0;
+  }
+  return hash;
+}
+
+function getFallbackAccent(tab) {
+  const seed = getTabHost(tab.url || tab.title || String(tab.id));
+  const hue = hashString(seed) % 360;
+  const saturation = 62;
+  const lightness = 52;
+  const solid = `hsl(${hue} ${saturation}% ${lightness}%)`;
+  const soft = `hsl(${hue} ${saturation}% ${lightness}% / 0.14)`;
+  const glow = `hsl(${hue} ${saturation}% ${lightness}% / 0.22)`;
+  const border = `hsl(${hue} ${saturation}% ${lightness}% / 0.34)`;
+  return { solid, soft, glow, border };
+}
+
+function rgbToAccent(red, green, blue) {
+  return {
+    solid: `rgb(${red}, ${green}, ${blue})`,
+    soft: `rgba(${red}, ${green}, ${blue}, 0.14)`,
+    glow: `rgba(${red}, ${green}, ${blue}, 0.22)`,
+    border: `rgba(${red}, ${green}, ${blue}, 0.34)`
+  };
+}
+
+async function extractAccentFromFavicon(faviconUrl) {
+  return new Promise((resolve, reject) => {
+    const image = new Image();
+    image.crossOrigin = "anonymous";
+    image.decoding = "async";
+    image.onload = () => {
+      try {
+        const canvas = document.createElement("canvas");
+        const context = canvas.getContext("2d", { willReadFrequently: true });
+        canvas.width = 16;
+        canvas.height = 16;
+        context.drawImage(image, 0, 0, 16, 16);
+
+        const { data } = context.getImageData(0, 0, 16, 16);
+        let red = 0;
+        let green = 0;
+        let blue = 0;
+        let total = 0;
+
+        for (let index = 0; index < data.length; index += 4) {
+          const alpha = data[index + 3];
+          if (alpha < 80) {
+            continue;
+          }
+
+          red += data[index];
+          green += data[index + 1];
+          blue += data[index + 2];
+          total += 1;
+        }
+
+        if (!total) {
+          reject(new Error("No visible pixels in favicon"));
+          return;
+        }
+
+        resolve(
+          rgbToAccent(
+            Math.round(red / total),
+            Math.round(green / total),
+            Math.round(blue / total)
+          )
+        );
+      } catch (error) {
+        reject(error);
+      }
+    };
+    image.onerror = () => {
+      reject(new Error("Unable to load favicon"));
+    };
+    image.src = faviconUrl;
+  });
+}
+
+function applyAccent(card, accent) {
+  card.style.setProperty("--tab-accent", accent.solid);
+  card.style.setProperty("--tab-accent-soft", accent.soft);
+  card.style.setProperty("--tab-accent-glow", accent.glow);
+  card.style.setProperty("--tab-accent-border", accent.border);
+}
+
+async function resolveAccentForTab(tab, card) {
+  const cachedAccent = accentCache.get(tab.id);
+  if (cachedAccent) {
+    applyAccent(card, cachedAccent);
+    return;
+  }
+
+  const fallbackAccent = getFallbackAccent(tab);
+  applyAccent(card, fallbackAccent);
+
+  if (!tab.favIconUrl) {
+    accentCache.set(tab.id, fallbackAccent);
+    return;
+  }
+
+  try {
+    const faviconAccent = await extractAccentFromFavicon(tab.favIconUrl);
+    accentCache.set(tab.id, faviconAccent);
+
+    // The async favicon sampling can finish after a re-render, so only update
+    // the card if it still represents the same tab.
+    if (card.isConnected && card.dataset.tabId === String(tab.id)) {
+      applyAccent(card, faviconAccent);
+    }
+  } catch (error) {
+    accentCache.set(tab.id, fallbackAccent);
+  }
 }
 
 function render() {
-  clampSelectedIndex();
+  ensureValidSelection();
+  const selectedIndex = getSelectedIndex();
 
   const pageTabs = getPageTabs();
   const pageCount = getPageCount();
@@ -163,12 +319,13 @@ function render() {
     const previewDomain = card.querySelector(".preview-domain");
     const title = card.querySelector(".tab-title");
     const url = card.querySelector(".tab-url");
+    const closeButton = card.querySelector(".close-button");
 
     card.dataset.globalIndex = String(globalIndex);
     card.dataset.tabId = String(tab.id);
-    card.setAttribute("aria-selected", String(globalIndex === state.selectedGlobalIndex));
+    card.setAttribute("aria-selected", String(globalIndex === selectedIndex));
     card.classList.toggle("is-active", Boolean(tab.active));
-    card.classList.toggle("is-selected", globalIndex === state.selectedGlobalIndex);
+    card.classList.toggle("is-selected", globalIndex === selectedIndex);
 
     title.textContent = tab.title || "Untitled tab";
     url.textContent = getShortUrl(tab.url || "");
@@ -184,14 +341,26 @@ function render() {
     });
 
     card.addEventListener("click", () => {
-      activateTab(tab.id);
+      activateTab(tab.id).catch((error) => {
+        console.error("Failed to activate tab", error);
+      });
     });
 
     card.addEventListener("focus", () => {
-      state.selectedGlobalIndex = globalIndex;
+      state.selectedTabId = tab.id;
       renderSelectedState();
     });
 
+    closeButton.addEventListener("click", (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      closeTab(tab.id).catch((error) => {
+        console.error("Failed to close tab", error);
+      });
+    });
+
+    applyAccent(card, getFallbackAccent(tab));
+    resolveAccentForTab(tab, card);
     elements.tabGrid.appendChild(card);
   });
 }
@@ -199,8 +368,7 @@ function render() {
 function renderSelectedState() {
   const cards = elements.tabGrid.querySelectorAll(".tab-card");
   cards.forEach((card) => {
-    const globalIndex = Number(card.dataset.globalIndex);
-    const isSelected = globalIndex === state.selectedGlobalIndex;
+    const isSelected = Number(card.dataset.tabId) === state.selectedTabId;
     card.classList.toggle("is-selected", isSelected);
     card.setAttribute("aria-selected", String(isSelected));
   });
@@ -214,6 +382,17 @@ async function activateTab(tabId) {
   }
 
   window.close();
+}
+
+async function closeTab(tabId) {
+  const selectedIndex = getSelectedIndex();
+  await browser.tabs.remove(tabId);
+  accentCache.delete(tabId);
+
+  const nextIndex = Math.max(0, selectedIndex - 1);
+  await loadTabs({
+    preferredIndex: nextIndex
+  });
 }
 
 function getColumnCount() {
@@ -232,6 +411,11 @@ function getColumnCount() {
 }
 
 function changePage(direction) {
+  if (!state.filteredTabs.length) {
+    return;
+  }
+
+  const previousPageIndex = state.pageIndex;
   const nextPageIndex = state.pageIndex + direction;
   const pageCount = getPageCount();
   if (nextPageIndex < 0 || nextPageIndex >= pageCount) {
@@ -239,9 +423,12 @@ function changePage(direction) {
   }
 
   state.pageIndex = nextPageIndex;
-  const startIndex = state.pageIndex * PAGE_SIZE;
-  const endIndex = Math.min(startIndex + PAGE_SIZE - 1, state.filteredTabs.length - 1);
-  state.selectedGlobalIndex = Math.min(Math.max(state.selectedGlobalIndex, startIndex), endIndex);
+  const currentIndex = Math.max(0, getSelectedIndex());
+  const offset = currentIndex - previousPageIndex * PAGE_SIZE;
+  const nextStart = nextPageIndex * PAGE_SIZE;
+  const nextEnd = Math.min(nextStart + PAGE_SIZE - 1, state.filteredTabs.length - 1);
+  const nextIndex = Math.min(nextStart + Math.max(offset, 0), nextEnd);
+  state.selectedTabId = state.filteredTabs[nextIndex].id;
   render();
   focusSelectedCard();
 }
@@ -253,7 +440,7 @@ function handleArrowNavigation(key) {
   }
 
   const pageStartIndex = state.pageIndex * PAGE_SIZE;
-  const localIndex = state.selectedGlobalIndex - pageStartIndex;
+  const localIndex = getSelectedIndex() - pageStartIndex;
   const columns = Math.max(1, getColumnCount());
   let nextLocalIndex = localIndex;
 
@@ -271,7 +458,7 @@ function handleArrowNavigation(key) {
   setSelection(pageStartIndex + nextLocalIndex);
 }
 
-async function loadTabs() {
+async function loadTabs(options = {}) {
   state.sourceWindowId = parseSourceWindowId();
 
   const query = {};
@@ -289,13 +476,14 @@ async function loadTabs() {
     .filter((tab) => !tab.hidden)
     .sort((a, b) => a.index - b.index);
 
-  const activeIndex = state.allTabs.findIndex((tab) => tab.active);
-  if (activeIndex >= 0) {
-    state.selectedGlobalIndex = activeIndex;
-    state.pageIndex = Math.floor(activeIndex / PAGE_SIZE);
+  if (typeof options.preferredIndex === "number" && state.allTabs[options.preferredIndex]) {
+    state.selectedTabId = state.allTabs[options.preferredIndex].id;
+  } else if (!state.selectedTabId) {
+    const activeTab = state.allTabs.find((tab) => tab.active);
+    state.selectedTabId = activeTab?.id ?? state.allTabs[0]?.id ?? null;
   }
 
-  updateFilteredTabs();
+  updateFilteredTabs(state.selectedTabId);
   render();
   focusSelectedCard();
 }
@@ -303,10 +491,15 @@ async function loadTabs() {
 function bindEvents() {
   elements.searchInput.addEventListener("input", () => {
     state.pageIndex = 0;
-    state.selectedGlobalIndex = 0;
-    updateFilteredTabs();
+    updateFilteredTabs(state.selectedTabId);
     render();
-    focusSelectedCard();
+  });
+
+  elements.searchInput.addEventListener("keydown", (event) => {
+    if (event.key === "ArrowDown") {
+      event.preventDefault();
+      focusSelectedCard();
+    }
   });
 
   elements.prevPageButton.addEventListener("click", () => {
@@ -337,7 +530,7 @@ function bindEvents() {
     if (["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown"].includes(event.key)) {
       const isTyping =
         document.activeElement === elements.searchInput &&
-        (event.key === "ArrowLeft" || event.key === "ArrowRight");
+        !["ArrowUp", "ArrowDown"].includes(event.key);
 
       if (isTyping) {
         return;
@@ -349,7 +542,12 @@ function bindEvents() {
     }
 
     if (event.key === "Enter") {
-      const selectedTab = state.filteredTabs[state.selectedGlobalIndex];
+      if (document.activeElement === elements.searchInput && !state.filteredTabs.length) {
+        return;
+      }
+
+      const selectedIndex = getSelectedIndex();
+      const selectedTab = state.filteredTabs[selectedIndex];
       if (!selectedTab) {
         return;
       }

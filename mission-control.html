@@ -67,8 +67,11 @@
     </div>
 
     <template id="tab-card-template">
-      <button type="button" class="tab-card" role="option">
+      <article class="tab-card" role="option" tabindex="-1">
         <div class="preview-shell" aria-hidden="true">
+          <button type="button" class="close-button" aria-label="Close tab" tabindex="-1">
+            ×
+          </button>
           <div class="preview-backdrop"></div>
           <div class="preview-content">
             <div class="preview-favicon"></div>
@@ -84,7 +87,7 @@
           <h2 class="tab-title"></h2>
           <p class="tab-url"></p>
         </div>
-      </button>
+      </article>
     </template>
 
     <script src="mission-control.js"></script>
