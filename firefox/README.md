@@ -15,3 +15,4 @@ This folder contains the Firefox build of Tab Mission Control.
 - Firefox uses the `browser.*` WebExtensions APIs directly.
 - Firefox extensions cannot draw a true system-level overlay above browser chrome, so this build opens a large popup window instead.
 - Hibernate mode maps to Firefox's real discarded-tab state. Active tabs cannot be discarded until you switch away from them.
+- The popup now groups tabs by window, supports drag-and-drop tab moves, restores recently closed tabs, and saves the selected theme preference with extension storage.

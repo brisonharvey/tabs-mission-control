@@ -1,28 +1,38 @@
 "use strict";
 
-const PAGE_SIZE = 20;
 const FALLBACK_ICON = "icons/icon-32.svg";
+const THEME_STORAGE_KEY = "missionControlThemePreference";
+const RECENTLY_CLOSED_LIMIT = 8;
 const extensionApi = globalThis.browser ?? globalThis.chrome;
+const systemThemeQuery = globalThis.matchMedia?.("(prefers-color-scheme: dark)") ?? null;
 
 const state = {
   allTabs: [],
-  filteredTabs: [],
-  pageIndex: 0,
+  visibleTabs: [],
+  windowGroups: [],
+  visibleWindowGroups: [],
   selectedTabId: null,
-  sourceWindowId: null
+  sourceWindowId: null,
+  recentSessions: [],
+  themePreference: "system",
+  dragState: null
 };
 
 const accentCache = new Map();
 
 const elements = {
   searchInput: document.getElementById("search-input"),
-  prevPageButton: document.getElementById("prev-page"),
-  nextPageButton: document.getElementById("next-page"),
-  pageIndicator: document.getElementById("page-indicator"),
+  refreshTabsButton: document.getElementById("refresh-tabs"),
+  refreshSessionsButton: document.getElementById("refresh-sessions"),
   resultsSummary: document.getElementById("results-summary"),
   emptyState: document.getElementById("empty-state"),
-  tabGrid: document.getElementById("tab-grid"),
-  tabTemplate: document.getElementById("tab-card-template")
+  windowGroups: document.getElementById("window-groups"),
+  recentEmptyState: document.getElementById("recent-empty-state"),
+  recentlyClosedList: document.getElementById("recently-closed-list"),
+  windowGroupTemplate: document.getElementById("window-group-template"),
+  tabTemplate: document.getElementById("tab-card-template"),
+  recentlyClosedItemTemplate: document.getElementById("recently-closed-item-template"),
+  themeButtons: [...document.querySelectorAll(".theme-button")]
 };
 
 function callApi(apiMethod, ...args) {
@@ -30,13 +40,12 @@ function callApi(apiMethod, ...args) {
     return Promise.reject(new Error("Extension API is unavailable"));
   }
 
-  try {
-    const result = apiMethod(...args);
-    if (result && typeof result.then === "function") {
-      return result;
+  if (globalThis.browser) {
+    try {
+      return Promise.resolve(apiMethod(...args));
+    } catch (error) {
+      return Promise.reject(error);
     }
-  } catch (error) {
-    return Promise.reject(error);
   }
 
   return new Promise((resolve, reject) => {
@@ -72,7 +81,7 @@ function getShortUrl(url) {
     const path = parsed.pathname === "/" ? "" : parsed.pathname;
     return `${parsed.host}${path}`.slice(0, 64);
   } catch (error) {
-    return url || "Firefox page";
+    return url || "Browser page";
   }
 }
 
@@ -87,62 +96,40 @@ function getPreviewLabel(tab) {
 }
 
 function getSelectedIndex() {
-  if (!state.filteredTabs.length) {
+  if (!state.visibleTabs.length) {
     return -1;
   }
 
-  const selectedIndex = state.filteredTabs.findIndex(
+  const selectedIndex = state.visibleTabs.findIndex(
     (tab) => tab.id === state.selectedTabId
   );
   if (selectedIndex >= 0) {
     return selectedIndex;
   }
 
-  state.selectedTabId = state.filteredTabs[0].id;
+  state.selectedTabId = state.visibleTabs[0].id;
   return 0;
 }
 
-function getPageCount() {
-  return Math.max(1, Math.ceil(state.filteredTabs.length / PAGE_SIZE));
-}
-
-function getPageTabs() {
-  const start = state.pageIndex * PAGE_SIZE;
-  return state.filteredTabs.slice(start, start + PAGE_SIZE);
-}
-
 function ensureValidSelection() {
-  if (!state.filteredTabs.length) {
+  if (!state.visibleTabs.length) {
     state.selectedTabId = null;
-    state.pageIndex = 0;
     return;
   }
 
-  const selectedIndex = getSelectedIndex();
-  const pageCount = getPageCount();
-  state.pageIndex = Math.max(0, Math.min(state.pageIndex, pageCount - 1));
-
-  if (selectedIndex < 0) {
-    state.selectedTabId = state.filteredTabs[0].id;
+  if (!state.visibleTabs.some((tab) => tab.id === state.selectedTabId)) {
+    state.selectedTabId = state.visibleTabs[0].id;
   }
 }
 
-function setSelection(globalIndex, options = {}) {
-  if (!state.filteredTabs.length) {
+function setSelection(nextIndex, options = {}) {
+  if (!state.visibleTabs.length) {
     return;
   }
 
-  const nextIndex = Math.max(0, Math.min(globalIndex, state.filteredTabs.length - 1));
-  const nextPageIndex = Math.floor(nextIndex / PAGE_SIZE);
-  const shouldRender = nextPageIndex !== state.pageIndex || options.forceRender;
-  state.selectedTabId = state.filteredTabs[nextIndex].id;
-  state.pageIndex = nextPageIndex;
-
-  if (shouldRender) {
-    render();
-  } else {
-    renderSelectedState();
-  }
+  const boundedIndex = Math.max(0, Math.min(nextIndex, state.visibleTabs.length - 1));
+  state.selectedTabId = state.visibleTabs[boundedIndex].id;
+  renderSelectedState();
 
   if (options.focus !== false) {
     focusSelectedCard();
@@ -150,52 +137,55 @@ function setSelection(globalIndex, options = {}) {
 }
 
 function focusSelectedCard() {
-  const selectedCard = elements.tabGrid.querySelector(
+  const selectedCard = elements.windowGroups.querySelector(
     `.tab-card[data-tab-id="${String(state.selectedTabId)}"]`
   );
   selectedCard?.focus();
 }
 
-function updateFilteredTabs(preferredTabId = state.selectedTabId) {
+function updateVisibleTabs(preferredTabId = state.selectedTabId) {
   const query = elements.searchInput.value.trim().toLowerCase();
 
-  state.filteredTabs = state.allTabs.filter((tab) => {
-    if (!query) {
-      return true;
-    }
+  state.visibleWindowGroups = state.windowGroups
+    .map((group) => {
+      const visibleTabs = group.tabs.filter((tab) => {
+        if (!query) {
+          return true;
+        }
 
-    return (
-      tab.title?.toLowerCase().includes(query) ||
-      tab.url?.toLowerCase().includes(query)
-    );
-  });
+        return (
+          tab.title?.toLowerCase().includes(query) ||
+          tab.url?.toLowerCase().includes(query)
+        );
+      });
 
-  const pageCount = getPageCount();
-  if (state.pageIndex >= pageCount) {
-    state.pageIndex = pageCount - 1;
-  }
+      return {
+        ...group,
+        visibleTabs
+      };
+    })
+    .filter((group) => group.visibleTabs.length > 0);
 
-  if (!state.filteredTabs.length) {
+  state.visibleTabs = state.visibleWindowGroups.flatMap((group) => group.visibleTabs);
+
+  if (!state.visibleTabs.length) {
     state.selectedTabId = null;
     return;
   }
 
-  const preferredMatch = state.filteredTabs.find((tab) => tab.id === preferredTabId);
+  const preferredMatch = state.visibleTabs.find((tab) => tab.id === preferredTabId);
   if (preferredMatch) {
     state.selectedTabId = preferredMatch.id;
-    state.pageIndex = Math.floor(getSelectedIndex() / PAGE_SIZE);
     return;
   }
 
-  const activeMatch = state.filteredTabs.find((tab) => tab.active);
+  const activeMatch = state.visibleTabs.find((tab) => tab.active);
   if (activeMatch) {
     state.selectedTabId = activeMatch.id;
-    state.pageIndex = Math.floor(getSelectedIndex() / PAGE_SIZE);
     return;
   }
 
-  state.selectedTabId = state.filteredTabs[0].id;
-  state.pageIndex = 0;
+  state.selectedTabId = state.visibleTabs[0].id;
 }
 
 function hashString(input) {
@@ -307,8 +297,6 @@ async function resolveAccentForTab(tab, card) {
     const faviconAccent = await extractAccentFromFavicon(tab.favIconUrl);
     accentCache.set(tab.id, faviconAccent);
 
-    // The async favicon sampling can finish after a re-render, so only update
-    // the card if it still represents the same tab.
     if (card.isConnected && card.dataset.tabId === String(tab.id)) {
       applyAccent(card, faviconAccent);
     }
@@ -317,97 +305,213 @@ async function resolveAccentForTab(tab, card) {
   }
 }
 
-function render() {
-  ensureValidSelection();
-  const selectedIndex = getSelectedIndex();
+function getWindowTitle(group) {
+  if (group.windowId === state.sourceWindowId) {
+    return `Current Window`;
+  }
 
-  const pageTabs = getPageTabs();
-  const pageCount = getPageCount();
-  const totalVisible = state.filteredTabs.length;
-  const pageStart = totalVisible === 0 ? 0 : state.pageIndex * PAGE_SIZE + 1;
-  const pageEnd = Math.min((state.pageIndex + 1) * PAGE_SIZE, totalVisible);
+  return `Window ${group.displayIndex}`;
+}
 
-  elements.tabGrid.replaceChildren();
-  elements.emptyState.hidden = totalVisible !== 0;
-  elements.tabGrid.hidden = totalVisible === 0;
-  elements.pageIndicator.textContent = `Page ${state.pageIndex + 1} of ${pageCount}`;
-  elements.prevPageButton.disabled = state.pageIndex === 0;
-  elements.nextPageButton.disabled = state.pageIndex >= pageCount - 1;
-  elements.resultsSummary.textContent =
-    totalVisible === 0
-      ? "No tabs match the current search."
-      : `Showing ${pageStart}-${pageEnd} of ${totalVisible} matching tabs`;
+function getWindowLabel(group) {
+  return group.windowId === state.sourceWindowId ? "Focused now" : "Browser window";
+}
 
-  pageTabs.forEach((tab, pageOffset) => {
-    const globalIndex = state.pageIndex * PAGE_SIZE + pageOffset;
-    const card = elements.tabTemplate.content.firstElementChild.cloneNode(true);
+function renderSummary() {
+  const query = elements.searchInput.value.trim();
+  const visibleWindowCount = state.visibleWindowGroups.length;
+  const totalWindowCount = state.windowGroups.length;
+  const visibleTabCount = state.visibleTabs.length;
+  const totalTabCount = state.allTabs.length;
+  const recentCount = state.recentSessions.length;
 
-    const favicon = card.querySelector(".favicon");
-    const previewFavicon = card.querySelector(".preview-favicon");
-    const previewFaviconShell = card.querySelector(".preview-favicon-shell");
-    const previewFaviconFallback = card.querySelector(".preview-favicon-fallback");
-    const previewDomain = card.querySelector(".preview-domain");
-    const title = card.querySelector(".tab-title");
-    const url = card.querySelector(".tab-url");
-    const closeButton = card.querySelector(".close-button");
+  if (!totalTabCount) {
+    elements.resultsSummary.textContent = "No open tabs were found.";
+    return;
+  }
 
-    card.dataset.globalIndex = String(globalIndex);
-    card.dataset.tabId = String(tab.id);
-    card.setAttribute("aria-selected", String(globalIndex === selectedIndex));
-    card.classList.toggle("is-active", Boolean(tab.active));
-    card.classList.toggle("is-hibernated", Boolean(tab.discarded));
-    card.classList.toggle("is-selected", globalIndex === selectedIndex);
+  if (!visibleTabCount) {
+    elements.resultsSummary.textContent = query
+      ? `No tabs match "${query}".`
+      : "No open tabs were found.";
+    return;
+  }
 
-    title.textContent = tab.title || "Untitled tab";
-    url.textContent = getShortUrl(tab.url || "");
-    // Firefox does not offer a fast, non-disruptive way to capture thumbnail
-    // previews for every tab in the current window, so the MVP uses a styled
-    // fallback preview shell instead of attempting fake live thumbnails.
-    previewFaviconFallback.textContent = getPreviewLabel(tab);
-    previewDomain.textContent = getTabHost(tab.url || "");
+  const querySummary = query
+    ? `Showing ${visibleTabCount} of ${totalTabCount} tabs`
+    : `Showing ${visibleTabCount} tabs`;
+  const windowSummary =
+    visibleWindowCount === totalWindowCount
+      ? `across ${totalWindowCount} windows`
+      : `across ${visibleWindowCount} of ${totalWindowCount} windows`;
+  const recentSummary =
+    recentCount > 0 ? `${recentCount} recently closed ready to restore` : "No recent sessions";
 
-    favicon.src = tab.favIconUrl || FALLBACK_ICON;
-    favicon.addEventListener("error", () => {
-      favicon.src = FALLBACK_ICON;
+  elements.resultsSummary.textContent = `${querySummary} ${windowSummary}. ${recentSummary}.`;
+}
+
+function renderRecentSessions() {
+  elements.recentlyClosedList.replaceChildren();
+  elements.recentEmptyState.hidden = state.recentSessions.length > 0;
+
+  state.recentSessions.forEach((session) => {
+    const item = elements.recentlyClosedItemTemplate.content.firstElementChild.cloneNode(true);
+    const icon = item.querySelector(".recently-closed-icon");
+    const title = item.querySelector(".recently-closed-title");
+    const url = item.querySelector(".recently-closed-url");
+
+    item.dataset.sessionId = session.sessionId;
+    title.textContent = session.title || "Recently closed tab";
+    url.textContent = getShortUrl(session.url || "");
+
+    icon.src = session.favIconUrl || FALLBACK_ICON;
+    icon.addEventListener("error", () => {
+      icon.src = FALLBACK_ICON;
     });
 
+    item.addEventListener("click", () => {
+      restoreSession(session.sessionId).catch((error) => {
+        console.error("Failed to restore session", error);
+        elements.resultsSummary.textContent = "Unable to restore that recently closed tab.";
+      });
+    });
+
+    elements.recentlyClosedList.appendChild(item);
+  });
+}
+
+function renderTabCard(tab) {
+  const card = elements.tabTemplate.content.firstElementChild.cloneNode(true);
+  const favicon = card.querySelector(".favicon");
+  const previewFavicon = card.querySelector(".preview-favicon");
+  const previewFaviconShell = card.querySelector(".preview-favicon-shell");
+  const previewFaviconFallback = card.querySelector(".preview-favicon-fallback");
+  const previewDomain = card.querySelector(".preview-domain");
+  const title = card.querySelector(".tab-title");
+  const url = card.querySelector(".tab-url");
+  const closeButton = card.querySelector(".close-button");
+
+  card.dataset.tabId = String(tab.id);
+  card.dataset.windowId = String(tab.windowId);
+  card.dataset.tabIndex = String(tab.index);
+  card.setAttribute("aria-selected", String(tab.id === state.selectedTabId));
+  card.classList.toggle("is-active", Boolean(tab.active));
+  card.classList.toggle("is-hibernated", Boolean(tab.discarded));
+  card.classList.toggle("is-selected", tab.id === state.selectedTabId);
+
+  title.textContent = tab.title || "Untitled tab";
+  url.textContent = getShortUrl(tab.url || "");
+  previewFaviconFallback.textContent = getPreviewLabel(tab);
+  previewDomain.textContent = getTabHost(tab.url || "");
+
+  favicon.src = tab.favIconUrl || FALLBACK_ICON;
+  favicon.addEventListener("error", () => {
+    favicon.src = FALLBACK_ICON;
+  });
+
+  previewFaviconShell.classList.remove("has-image");
+  previewFavicon.src = tab.favIconUrl || FALLBACK_ICON;
+  previewFavicon.addEventListener("load", () => {
+    previewFaviconShell.classList.add("has-image");
+  });
+  previewFavicon.addEventListener("error", () => {
     previewFaviconShell.classList.remove("has-image");
-    previewFavicon.src = tab.favIconUrl || FALLBACK_ICON;
-    previewFavicon.addEventListener("load", () => {
-      previewFaviconShell.classList.add("has-image");
+    previewFavicon.removeAttribute("src");
+  });
+
+  card.addEventListener("click", () => {
+    activateTab(tab.id).catch((error) => {
+      console.error("Failed to activate tab", error);
     });
-    previewFavicon.addEventListener("error", () => {
-      previewFaviconShell.classList.remove("has-image");
-      previewFavicon.removeAttribute("src");
+  });
+
+  card.addEventListener("focus", () => {
+    state.selectedTabId = tab.id;
+    renderSelectedState();
+  });
+
+  closeButton.addEventListener("click", (event) => {
+    event.preventDefault();
+    event.stopPropagation();
+    closeTab(tab.id).catch((error) => {
+      console.error("Failed to close tab", error);
+      elements.resultsSummary.textContent = "Unable to close that tab.";
+    });
+  });
+
+  card.addEventListener("dragstart", (event) => {
+    startDraggingTab(event, tab, card);
+  });
+
+  card.addEventListener("dragover", (event) => {
+    handleCardDragOver(event, tab, card);
+  });
+
+  card.addEventListener("drop", (event) => {
+    handleCardDrop(event, tab);
+  });
+
+  card.addEventListener("dragend", () => {
+    endDraggingTab();
+  });
+
+  applyAccent(card, getFallbackAccent(tab));
+  resolveAccentForTab(tab, card);
+  return card;
+}
+
+function renderWindowGroups() {
+  ensureValidSelection();
+  elements.windowGroups.replaceChildren();
+
+  const hasTabs = state.visibleTabs.length > 0;
+  elements.emptyState.hidden = hasTabs;
+  elements.windowGroups.hidden = !hasTabs;
+
+  state.visibleWindowGroups.forEach((group) => {
+    const section = elements.windowGroupTemplate.content.firstElementChild.cloneNode(true);
+    const windowLabel = section.querySelector(".window-label");
+    const windowTitle = section.querySelector(".window-title");
+    const tabCount = section.querySelector(".window-tab-count");
+    const dropZone = section.querySelector(".window-drop-zone");
+    const tabGrid = section.querySelector(".tab-grid");
+
+    section.dataset.windowId = String(group.windowId);
+    windowLabel.textContent = getWindowLabel(group);
+    windowTitle.textContent = getWindowTitle(group);
+    tabCount.textContent =
+      group.visibleTabs.length === group.tabs.length
+        ? `${group.tabs.length} tabs`
+        : `${group.visibleTabs.length} of ${group.tabs.length} tabs`;
+
+    dropZone.dataset.windowId = String(group.windowId);
+    dropZone.classList.toggle("is-drop-target-empty", group.visibleTabs.length === 0);
+    tabGrid.setAttribute("aria-label", `${windowTitle.textContent} tabs`);
+
+    dropZone.addEventListener("dragover", (event) => {
+      handleWindowDragOver(event, group, dropZone);
     });
 
-    card.addEventListener("click", () => {
-      activateTab(tab.id).catch((error) => {
-        console.error("Failed to activate tab", error);
-      });
+    dropZone.addEventListener("drop", (event) => {
+      handleWindowDrop(event, group);
     });
 
-    card.addEventListener("focus", () => {
-      state.selectedTabId = tab.id;
-      renderSelectedState();
+    dropZone.addEventListener("dragleave", (event) => {
+      if (event.currentTarget === event.target) {
+        dropZone.classList.remove("is-drop-target");
+      }
     });
 
-    closeButton.addEventListener("click", (event) => {
-      event.preventDefault();
-      event.stopPropagation();
-      closeTab(tab.id).catch((error) => {
-        console.error("Failed to close tab", error);
-      });
+    group.visibleTabs.forEach((tab) => {
+      tabGrid.appendChild(renderTabCard(tab));
     });
 
-    applyAccent(card, getFallbackAccent(tab));
-    resolveAccentForTab(tab, card);
-    elements.tabGrid.appendChild(card);
+    elements.windowGroups.appendChild(section);
   });
 }
 
 function renderSelectedState() {
-  const cards = elements.tabGrid.querySelectorAll(".tab-card");
+  const cards = elements.windowGroups.querySelectorAll(".tab-card");
   cards.forEach((card) => {
     const isSelected = Number(card.dataset.tabId) === state.selectedTabId;
     card.classList.toggle("is-selected", isSelected);
@@ -415,17 +519,32 @@ function renderSelectedState() {
   });
 }
 
-async function activateTab(tabId) {
-  await callApi(extensionApi.tabs.update.bind(extensionApi.tabs), tabId, { active: true });
-
-  if (state.sourceWindowId !== null) {
-    await callApi(
-      extensionApi.windows.update.bind(extensionApi.windows),
-      state.sourceWindowId,
-      { focused: true }
+function renderThemeButtons() {
+  elements.themeButtons.forEach((button) => {
+    button.classList.toggle(
+      "is-active",
+      button.dataset.themePreference === state.themePreference
     );
+  });
+}
+
+function render() {
+  renderSummary();
+  renderWindowGroups();
+  renderRecentSessions();
+  renderThemeButtons();
+}
+
+async function activateTab(tabId) {
+  const tab = state.allTabs.find((candidate) => candidate.id === tabId);
+  if (!tab) {
+    return;
   }
 
+  await callApi(extensionApi.tabs.update.bind(extensionApi.tabs), tabId, { active: true });
+  await callApi(extensionApi.windows.update.bind(extensionApi.windows), tab.windowId, {
+    focused: true
+  });
   window.close();
 }
 
@@ -434,9 +553,14 @@ async function closeTab(tabId) {
   await callApi(extensionApi.tabs.remove.bind(extensionApi.tabs), tabId);
   accentCache.delete(tabId);
 
-  const nextIndex = Math.max(0, selectedIndex - 1);
-  await loadTabs({
-    preferredIndex: nextIndex
+  const fallbackTabId =
+    state.visibleTabs[Math.max(0, selectedIndex - 1)]?.id ??
+    state.visibleTabs[Math.min(state.visibleTabs.length - 1, selectedIndex + 1)]?.id ??
+    null;
+
+  await refreshView({
+    preferredTabId: fallbackTabId,
+    includeRecentSessions: true
   });
 }
 
@@ -448,8 +572,9 @@ async function hibernateTab(tabId) {
 
   if (tab.discarded) {
     await callApi(extensionApi.tabs.reload.bind(extensionApi.tabs), tabId);
-    await loadTabs({
-      preferredIndex: Math.max(0, getSelectedIndex())
+    await refreshView({
+      preferredTabId: tabId,
+      includeRecentSessions: false
     });
     elements.resultsSummary.textContent = "Tab restored from hibernate mode.";
     return;
@@ -462,111 +587,289 @@ async function hibernateTab(tabId) {
   }
 
   await callApi(extensionApi.tabs.discard.bind(extensionApi.tabs), tabId);
-  await loadTabs({
-    preferredIndex: Math.max(0, getSelectedIndex())
+  await refreshView({
+    preferredTabId: tabId,
+    includeRecentSessions: false
   });
   elements.resultsSummary.textContent = "Tab moved into hibernate mode.";
 }
 
-function getColumnCount() {
-  const cards = [...elements.tabGrid.querySelectorAll(".tab-card")];
-  if (cards.length <= 1) {
-    return 1;
-  }
-
-  const firstTop = cards[0].offsetTop;
-  const secondRow = cards.find((card) => card.offsetTop > firstTop);
-  if (!secondRow) {
-    return cards.length;
-  }
-
-  return cards.findIndex((card) => card === secondRow);
-}
-
-function changePage(direction) {
-  if (!state.filteredTabs.length) {
-    return;
-  }
-
-  const previousPageIndex = state.pageIndex;
-  const nextPageIndex = state.pageIndex + direction;
-  const pageCount = getPageCount();
-  if (nextPageIndex < 0 || nextPageIndex >= pageCount) {
-    return;
-  }
-
-  state.pageIndex = nextPageIndex;
-  const currentIndex = Math.max(0, getSelectedIndex());
-  const offset = currentIndex - previousPageIndex * PAGE_SIZE;
-  const nextStart = nextPageIndex * PAGE_SIZE;
-  const nextEnd = Math.min(nextStart + PAGE_SIZE - 1, state.filteredTabs.length - 1);
-  const nextIndex = Math.min(nextStart + Math.max(offset, 0), nextEnd);
-  state.selectedTabId = state.filteredTabs[nextIndex].id;
-  render();
-  focusSelectedCard();
-}
-
 function handleArrowNavigation(key) {
-  const pageTabs = getPageTabs();
-  if (!pageTabs.length) {
+  const selectedIndex = getSelectedIndex();
+  if (selectedIndex < 0) {
     return;
   }
 
-  const pageStartIndex = state.pageIndex * PAGE_SIZE;
-  const localIndex = getSelectedIndex() - pageStartIndex;
-  const columns = Math.max(1, getColumnCount());
-  let nextLocalIndex = localIndex;
-
-  if (key === "ArrowRight") {
-    nextLocalIndex += 1;
-  } else if (key === "ArrowLeft") {
-    nextLocalIndex -= 1;
-  } else if (key === "ArrowDown") {
-    nextLocalIndex += columns;
-  } else if (key === "ArrowUp") {
-    nextLocalIndex -= columns;
-  }
-
-  nextLocalIndex = Math.max(0, Math.min(nextLocalIndex, pageTabs.length - 1));
-  setSelection(pageStartIndex + nextLocalIndex);
+  const delta = key === "ArrowLeft" || key === "ArrowUp" ? -1 : 1;
+  setSelection(selectedIndex + delta);
 }
 
-async function loadTabs(options = {}) {
-  state.sourceWindowId = parseSourceWindowId();
+function getDropPosition(card, event) {
+  const rect = card.getBoundingClientRect();
+  const horizontalBias = rect.width >= rect.height;
+  if (horizontalBias) {
+    return event.clientX >= rect.left + rect.width / 2 ? "after" : "before";
+  }
 
-  const query = {};
-  if (state.sourceWindowId !== null && !Number.isNaN(state.sourceWindowId)) {
-    query.windowId = state.sourceWindowId;
-  } else {
+  return event.clientY >= rect.top + rect.height / 2 ? "after" : "before";
+}
+
+function clearDropIndicators() {
+  elements.windowGroups
+    .querySelectorAll(".tab-card[data-drop-position]")
+    .forEach((card) => {
+      delete card.dataset.dropPosition;
+    });
+
+  elements.windowGroups
+    .querySelectorAll(".window-drop-zone.is-drop-target")
+    .forEach((zone) => {
+      zone.classList.remove("is-drop-target");
+    });
+}
+
+function startDraggingTab(event, tab, card) {
+  state.dragState = {
+    tabId: tab.id,
+    sourceWindowId: tab.windowId
+  };
+
+  card.classList.add("is-dragging");
+  if (event.dataTransfer) {
+    event.dataTransfer.effectAllowed = "move";
+    event.dataTransfer.setData("text/plain", String(tab.id));
+  }
+}
+
+function endDraggingTab() {
+  elements.windowGroups.querySelectorAll(".tab-card.is-dragging").forEach((card) => {
+    card.classList.remove("is-dragging");
+  });
+  state.dragState = null;
+  clearDropIndicators();
+}
+
+function handleCardDragOver(event, tab, card) {
+  if (!state.dragState || state.dragState.tabId === tab.id) {
+    return;
+  }
+
+  event.preventDefault();
+  event.stopPropagation();
+  event.dataTransfer.dropEffect = "move";
+  clearDropIndicators();
+
+  const dropZone = card.closest(".window-drop-zone");
+  const dropPosition = getDropPosition(card, event);
+  card.dataset.dropPosition = dropPosition;
+  dropZone?.classList.add("is-drop-target");
+
+  state.dragState.targetWindowId = tab.windowId;
+  state.dragState.targetTabId = tab.id;
+  state.dragState.dropPosition = dropPosition;
+}
+
+async function handleCardDrop(event, tab) {
+  if (!state.dragState || state.dragState.tabId === tab.id) {
+    return;
+  }
+
+  event.preventDefault();
+  event.stopPropagation();
+  const targetIndex = tab.index + (state.dragState.dropPosition === "after" ? 1 : 0);
+  await moveTab(state.dragState.tabId, tab.windowId, targetIndex);
+}
+
+function handleWindowDragOver(event, group, dropZone) {
+  if (!state.dragState) {
+    return;
+  }
+
+  event.preventDefault();
+  event.dataTransfer.dropEffect = "move";
+  clearDropIndicators();
+  dropZone.classList.add("is-drop-target");
+
+  state.dragState.targetWindowId = group.windowId;
+  state.dragState.targetTabId = null;
+  state.dragState.dropPosition = "after";
+}
+
+async function handleWindowDrop(event, group) {
+  if (!state.dragState) {
+    return;
+  }
+
+  event.preventDefault();
+  const targetIndex = group.tabs.length;
+  await moveTab(state.dragState.tabId, group.windowId, targetIndex);
+}
+
+async function moveTab(tabId, targetWindowId, targetIndex) {
+  const tab = state.allTabs.find((candidate) => candidate.id === tabId);
+  if (!tab) {
+    endDraggingTab();
+    return;
+  }
+
+  const moveProperties = {
+    index: targetIndex
+  };
+
+  if (targetWindowId !== tab.windowId) {
+    moveProperties.windowId = targetWindowId;
+  } else if (tab.index < targetIndex) {
+    moveProperties.index -= 1;
+  }
+
+  if (moveProperties.index === tab.index && targetWindowId === tab.windowId) {
+    endDraggingTab();
+    return;
+  }
+
+  await callApi(extensionApi.tabs.move.bind(extensionApi.tabs), tabId, moveProperties);
+  await refreshView({
+    preferredTabId: tabId,
+    includeRecentSessions: false
+  });
+  focusSelectedCard();
+  endDraggingTab();
+}
+
+async function restoreSession(sessionId) {
+  const restoredSession = await callApi(
+    extensionApi.sessions.restore.bind(extensionApi.sessions),
+    sessionId
+  );
+  const restoredTabId = restoredSession?.tab?.id ?? null;
+
+  await refreshView({
+    preferredTabId: restoredTabId,
+    includeRecentSessions: true
+  });
+}
+
+async function loadThemePreference() {
+  if (!extensionApi.storage?.local) {
+    applyTheme();
+    return;
+  }
+
+  try {
+    const stored = await callApi(
+      extensionApi.storage.local.get.bind(extensionApi.storage.local),
+      THEME_STORAGE_KEY
+    );
+    const themePreference = stored?.[THEME_STORAGE_KEY];
+    if (["system", "light", "dark"].includes(themePreference)) {
+      state.themePreference = themePreference;
+    }
+  } catch (error) {
+    console.error("Failed to load theme preference", error);
+  }
+
+  applyTheme();
+}
+
+function applyTheme() {
+  const resolvedTheme =
+    state.themePreference === "system"
+      ? systemThemeQuery?.matches
+        ? "dark"
+        : "light"
+      : state.themePreference;
+
+  document.documentElement.dataset.theme = resolvedTheme;
+  renderThemeButtons();
+}
+
+async function saveThemePreference(nextPreference) {
+  state.themePreference = nextPreference;
+  applyTheme();
+
+  if (!extensionApi.storage?.local) {
+    return;
+  }
+
+  await callApi(extensionApi.storage.local.set.bind(extensionApi.storage.local), {
+    [THEME_STORAGE_KEY]: nextPreference
+  });
+}
+
+async function loadRecentlyClosedSessions() {
+  if (!extensionApi.sessions?.getRecentlyClosed) {
+    state.recentSessions = [];
+    return;
+  }
+
+  const sessions = await callApi(
+    extensionApi.sessions.getRecentlyClosed.bind(extensionApi.sessions),
+    { maxResults: RECENTLY_CLOSED_LIMIT }
+  );
+
+  state.recentSessions = sessions
+    .filter((session) => session.tab?.sessionId)
+    .map((session) => ({
+      sessionId: session.tab.sessionId,
+      title: session.tab.title,
+      url: session.tab.url,
+      favIconUrl: session.tab.favIconUrl
+    }));
+}
+
+async function loadWindowsAndTabs(options = {}) {
+  if (state.sourceWindowId === null || Number.isNaN(state.sourceWindowId)) {
     const currentWindow = await callApi(
       extensionApi.windows.getCurrent.bind(extensionApi.windows)
     );
-    query.windowId = currentWindow.id;
     state.sourceWindowId = currentWindow.id;
   }
 
-  const tabs = await callApi(extensionApi.tabs.query.bind(extensionApi.tabs), query);
+  const windows = await callApi(extensionApi.windows.getAll.bind(extensionApi.windows), {
+    populate: true,
+    windowTypes: ["normal"]
+  });
 
-  state.allTabs = tabs
-    .filter((tab) => !tab.hidden)
-    .sort((a, b) => a.index - b.index);
+  const sortedWindows = windows
+    .filter((windowInfo) => windowInfo.type === "normal")
+    .sort((left, right) => {
+      if (left.id === state.sourceWindowId) {
+        return -1;
+      }
+      if (right.id === state.sourceWindowId) {
+        return 1;
+      }
+      return (left.id ?? 0) - (right.id ?? 0);
+    });
 
-  if (typeof options.preferredIndex === "number" && state.allTabs[options.preferredIndex]) {
-    state.selectedTabId = state.allTabs[options.preferredIndex].id;
-  } else if (!state.selectedTabId) {
-    const activeTab = state.allTabs.find((tab) => tab.active);
-    state.selectedTabId = activeTab?.id ?? state.allTabs[0]?.id ?? null;
+  state.windowGroups = sortedWindows.map((windowInfo, index) => {
+    const tabs = (windowInfo.tabs || [])
+      .filter((tab) => !tab.hidden)
+      .sort((left, right) => left.index - right.index);
+
+    return {
+      windowId: windowInfo.id,
+      displayIndex: index + 1,
+      focused: Boolean(windowInfo.focused),
+      tabs
+    };
+  });
+
+  state.allTabs = state.windowGroups.flatMap((group) => group.tabs);
+  updateVisibleTabs(options.preferredTabId ?? state.selectedTabId);
+}
+
+async function refreshView(options = {}) {
+  await loadWindowsAndTabs(options);
+  if (options.includeRecentSessions) {
+    await loadRecentlyClosedSessions();
   }
-
-  updateFilteredTabs(state.selectedTabId);
   render();
-  focusSelectedCard();
 }
 
 function bindEvents() {
   elements.searchInput.addEventListener("input", () => {
-    state.pageIndex = 0;
-    updateFilteredTabs(state.selectedTabId);
+    updateVisibleTabs(state.selectedTabId);
     render();
   });
 
@@ -577,28 +880,55 @@ function bindEvents() {
     }
   });
 
-  elements.prevPageButton.addEventListener("click", () => {
-    changePage(-1);
+  elements.refreshTabsButton.addEventListener("click", () => {
+    refreshView({
+      preferredTabId: state.selectedTabId,
+      includeRecentSessions: false
+    }).catch((error) => {
+      console.error("Failed to refresh tabs", error);
+      elements.resultsSummary.textContent = "Unable to refresh the tab list.";
+    });
   });
 
-  elements.nextPageButton.addEventListener("click", () => {
-    changePage(1);
+  elements.refreshSessionsButton.addEventListener("click", () => {
+    loadRecentlyClosedSessions()
+      .then(() => {
+        renderSummary();
+        renderRecentSessions();
+      })
+      .catch((error) => {
+        console.error("Failed to refresh recently closed tabs", error);
+        elements.resultsSummary.textContent = "Unable to refresh recently closed tabs.";
+      });
   });
+
+  elements.themeButtons.forEach((button) => {
+    button.addEventListener("click", () => {
+      saveThemePreference(button.dataset.themePreference).catch((error) => {
+        console.error("Failed to save theme preference", error);
+        elements.resultsSummary.textContent = "Unable to save theme preference.";
+      });
+    });
+  });
+
+  if (systemThemeQuery) {
+    const handleThemeChange = () => {
+      if (state.themePreference === "system") {
+        applyTheme();
+      }
+    };
+
+    if (typeof systemThemeQuery.addEventListener === "function") {
+      systemThemeQuery.addEventListener("change", handleThemeChange);
+    } else if (typeof systemThemeQuery.addListener === "function") {
+      systemThemeQuery.addListener(handleThemeChange);
+    }
+  }
 
   document.addEventListener("keydown", (event) => {
-    const isModifierPageShortcut =
-      (event.metaKey || event.ctrlKey) &&
-      (event.key === "ArrowLeft" || event.key === "ArrowRight");
-
     if (event.key === "Escape") {
       event.preventDefault();
       window.close();
-      return;
-    }
-
-    if (isModifierPageShortcut) {
-      event.preventDefault();
-      changePage(event.key === "ArrowRight" ? 1 : -1);
       return;
     }
 
@@ -617,12 +947,12 @@ function bindEvents() {
     }
 
     if (event.key === "Enter") {
-      if (document.activeElement === elements.searchInput && !state.filteredTabs.length) {
+      if (document.activeElement === elements.searchInput && !state.visibleTabs.length) {
         return;
       }
 
       const selectedIndex = getSelectedIndex();
-      const selectedTab = state.filteredTabs[selectedIndex];
+      const selectedTab = state.visibleTabs[selectedIndex];
       if (!selectedTab) {
         return;
       }
@@ -640,7 +970,7 @@ function bindEvents() {
       }
 
       const selectedIndex = getSelectedIndex();
-      const selectedTab = state.filteredTabs[selectedIndex];
+      const selectedTab = state.visibleTabs[selectedIndex];
       if (!selectedTab) {
         return;
       }
@@ -648,6 +978,7 @@ function bindEvents() {
       event.preventDefault();
       closeTab(selectedTab.id).catch((error) => {
         console.error("Failed to close tab", error);
+        elements.resultsSummary.textContent = "Unable to close the selected tab.";
       });
       return;
     }
@@ -658,7 +989,7 @@ function bindEvents() {
       }
 
       const selectedIndex = getSelectedIndex();
-      const selectedTab = state.filteredTabs[selectedIndex];
+      const selectedTab = state.visibleTabs[selectedIndex];
       if (!selectedTab) {
         return;
       }
@@ -672,8 +1003,17 @@ function bindEvents() {
   });
 }
 
-bindEvents();
-loadTabs().catch((error) => {
+async function initialize() {
+  state.sourceWindowId = parseSourceWindowId();
+  bindEvents();
+  await loadThemePreference();
+  await refreshView({
+    includeRecentSessions: true
+  });
+  focusSelectedCard();
+}
+
+initialize().catch((error) => {
   console.error("Failed to load tabs", error);
   elements.resultsSummary.textContent = "Unable to load tabs.";
 });

@@ -2,9 +2,11 @@
   "manifest_version": 3,
   "name": "Tab Mission Control",
   "version": "1.0.0",
-  "description": "A keyboard-first visual overview of open tabs in the current Chrome window.",
+  "description": "A keyboard-first visual overview of open tabs across Chrome windows.",
   "permissions": [
-    "tabs"
+    "tabs",
+    "sessions",
+    "storage"
   ],
   "background": {
     "service_worker": "background.js"

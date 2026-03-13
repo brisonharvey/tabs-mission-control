@@ -40,10 +40,10 @@ Load `/Users/brisonharvey/GitHub/Tab-Mission-Control/chrome` from `chrome://exte
 
 You can customize extension shortcuts from each browser's extension shortcut settings if needed.
 
-## Future enhancement ideas
+## Current capabilities
 
-- Drag-and-drop tab reordering
-- Close buttons on tab cards
-- Group tabs by browser window
-- Recently closed tabs with the `sessions` API
-- Persistent light/dark theme preference
+- Drag-and-drop tab reordering, including moving tabs between browser windows
+- Close buttons on tab cards and keyboard close support with `X`
+- Tabs grouped by browser window in the Mission Control view
+- Recently closed tabs restored through the `sessions` API
+- Persistent `system` / `light` / `dark` theme preference
