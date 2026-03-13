@@ -1,43 +1,44 @@
-# Firefox Mission Control
+# Tab Mission Control
 
-Firefox Mission Control is a temporary-loadable WebExtension that opens a large, keyboard-first visual tab overview for the current Firefox window.
+Tab Mission Control is a browser-neutral tab overview project with separate Firefox and Chrome extension builds.
 
 ## Project structure
 
 ```text
-firefox-mission-control/
-├── background.js
-├── icons/
-│   ├── icon-16.svg
-│   ├── icon-32.svg
-│   ├── icon-48.svg
-│   └── icon-96.svg
-├── manifest.json
-├── mission-control.css
-├── mission-control.html
-├── mission-control.js
+Tab-Mission-Control/
+├── chrome/
+│   ├── background.js
+│   ├── icons/
+│   ├── manifest.json
+│   ├── mission-control.css
+│   ├── mission-control.html
+│   ├── mission-control.js
+│   └── README.md
+├── firefox/
+│   ├── background.js
+│   ├── icons/
+│   ├── manifest.json
+│   ├── mission-control.css
+│   ├── mission-control.html
+│   ├── mission-control.js
+│   └── README.md
 └── README.md
 ```
 
-## Load in Firefox
+## Firefox build
 
-1. Open Firefox and go to `about:debugging`.
-2. Select **This Firefox**.
-3. Click **Load Temporary Add-on...**
-4. Choose the file `/Users/brisonharvey/GitHub/firefox-mission-control/manifest.json`.
-5. Use the toolbar button or the keyboard shortcut to open Mission Control.
+Load `/Users/brisonharvey/GitHub/Tab-Mission-Control/firefox` from `about:debugging`.
 
-## Default shortcut
+## Chrome build
+
+Load `/Users/brisonharvey/GitHub/Tab-Mission-Control/chrome` from `chrome://extensions`.
+
+## Shared shortcut
 
 - Windows / Linux: `Ctrl+Shift+Y`
 - macOS: `Command+Shift+Y`
 
-You can customize extension shortcuts from Firefox's add-on shortcut settings if this conflicts with another binding.
-
-## Notes on Firefox limitations
-
-- Firefox extensions cannot draw a true system-level overlay above browser chrome, so this MVP opens a large extension popup window instead.
-- Live thumbnail previews are intentionally omitted in the MVP. Firefox provides capture APIs, but capturing every open tab reliably would require extra permissions and can be disruptive or slow for a keyboard-first flow. The UI uses polished fallback preview cards instead.
+You can customize extension shortcuts from each browser's extension shortcut settings if needed.
 
 ## Future enhancement ideas
 

@@ -216,6 +216,38 @@ input {
   box-shadow: 0 0 0 4px var(--tab-accent-soft);
 }
 
+.tab-card.is-hibernated .preview-shell {
+  background: linear-gradient(
+    135deg,
+    color-mix(in srgb, #eef2f6 78%, var(--tab-accent) 22%),
+    color-mix(in srgb, #dde4ec 84%, var(--tab-accent) 16%)
+  );
+}
+
+.tab-card.is-hibernated .preview-backdrop {
+  background:
+    linear-gradient(140deg, rgba(17, 38, 68, 0.12), transparent 58%),
+    linear-gradient(
+      180deg,
+      rgba(255, 255, 255, 0.48),
+      color-mix(in srgb, #d7dee8 76%, var(--tab-accent) 24%)
+    );
+}
+
+.tab-card.is-hibernated .tab-card-content {
+  background: linear-gradient(
+    180deg,
+    rgba(248, 250, 252, 0.96),
+    color-mix(in srgb, #edf2f7 86%, var(--tab-accent) 14%)
+  );
+}
+
+.tab-card.is-hibernated .tab-title,
+.tab-card.is-hibernated .tab-url,
+.tab-card.is-hibernated .preview-domain {
+  color: color-mix(in srgb, var(--muted-strong) 80%, #4f5d70 20%);
+}
+
 .tab-card.is-active .tab-card-content {
   border-color: var(--tab-accent-border);
   background: linear-gradient(
@@ -358,6 +390,13 @@ input {
   min-height: 22px;
 }
 
+.tab-meta {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+
 .favicon {
   border-radius: 4px;
   background: rgba(16, 32, 51, 0.08);
@@ -380,6 +419,25 @@ input {
 }
 
 .tab-card.is-active .active-pill {
+  visibility: visible;
+}
+
+.hibernate-pill {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 22px;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: rgba(87, 104, 124, 0.12);
+  color: #4f5d70;
+  font-size: 0.75rem;
+  font-weight: 700;
+  letter-spacing: 0.01em;
+  visibility: hidden;
+}
+
+.tab-card.is-hibernated .hibernate-pill {
   visibility: visible;
 }
 

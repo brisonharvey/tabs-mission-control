@@ -2,6 +2,7 @@
 
 const PAGE_SIZE = 20;
 const FALLBACK_ICON = "icons/icon-32.svg";
+const extensionApi = globalThis.browser ?? globalThis.chrome;
 
 const state = {
   allTabs: [],
@@ -23,6 +24,33 @@ const elements = {
   tabGrid: document.getElementById("tab-grid"),
   tabTemplate: document.getElementById("tab-card-template")
 };
+
+function callApi(apiMethod, ...args) {
+  if (!apiMethod) {
+    return Promise.reject(new Error("Extension API is unavailable"));
+  }
+
+  try {
+    const result = apiMethod(...args);
+    if (result && typeof result.then === "function") {
+      return result;
+    }
+  } catch (error) {
+    return Promise.reject(error);
+  }
+
+  return new Promise((resolve, reject) => {
+    apiMethod(...args, (value) => {
+      const runtimeError = extensionApi?.runtime?.lastError;
+      if (runtimeError) {
+        reject(new Error(runtimeError.message));
+        return;
+      }
+
+      resolve(value);
+    });
+  });
+}
 
 function parseSourceWindowId() {
   const params = new URLSearchParams(window.location.search);
@@ -327,6 +355,7 @@ function render() {
     card.dataset.tabId = String(tab.id);
     card.setAttribute("aria-selected", String(globalIndex === selectedIndex));
     card.classList.toggle("is-active", Boolean(tab.active));
+    card.classList.toggle("is-hibernated", Boolean(tab.discarded));
     card.classList.toggle("is-selected", globalIndex === selectedIndex);
 
     title.textContent = tab.title || "Untitled tab";
@@ -387,10 +416,14 @@ function renderSelectedState() {
 }
 
 async function activateTab(tabId) {
-  await browser.tabs.update(tabId, { active: true });
+  await callApi(extensionApi.tabs.update.bind(extensionApi.tabs), tabId, { active: true });
 
   if (state.sourceWindowId !== null) {
-    await browser.windows.update(state.sourceWindowId, { focused: true });
+    await callApi(
+      extensionApi.windows.update.bind(extensionApi.windows),
+      state.sourceWindowId,
+      { focused: true }
+    );
   }
 
   window.close();
@@ -398,13 +431,41 @@ async function activateTab(tabId) {
 
 async function closeTab(tabId) {
   const selectedIndex = getSelectedIndex();
-  await browser.tabs.remove(tabId);
+  await callApi(extensionApi.tabs.remove.bind(extensionApi.tabs), tabId);
   accentCache.delete(tabId);
 
   const nextIndex = Math.max(0, selectedIndex - 1);
   await loadTabs({
     preferredIndex: nextIndex
   });
+}
+
+async function hibernateTab(tabId) {
+  const tab = state.allTabs.find((candidate) => candidate.id === tabId);
+  if (!tab) {
+    return;
+  }
+
+  if (tab.discarded) {
+    await callApi(extensionApi.tabs.reload.bind(extensionApi.tabs), tabId);
+    await loadTabs({
+      preferredIndex: Math.max(0, getSelectedIndex())
+    });
+    elements.resultsSummary.textContent = "Tab restored from hibernate mode.";
+    return;
+  }
+
+  if (tab.active) {
+    elements.resultsSummary.textContent =
+      "Active tabs cannot be hibernated. Select another tab first.";
+    return;
+  }
+
+  await callApi(extensionApi.tabs.discard.bind(extensionApi.tabs), tabId);
+  await loadTabs({
+    preferredIndex: Math.max(0, getSelectedIndex())
+  });
+  elements.resultsSummary.textContent = "Tab moved into hibernate mode.";
 }
 
 function getColumnCount() {
@@ -477,12 +538,14 @@ async function loadTabs(options = {}) {
   if (state.sourceWindowId !== null && !Number.isNaN(state.sourceWindowId)) {
     query.windowId = state.sourceWindowId;
   } else {
-    const currentWindow = await browser.windows.getCurrent();
+    const currentWindow = await callApi(
+      extensionApi.windows.getCurrent.bind(extensionApi.windows)
+    );
     query.windowId = currentWindow.id;
     state.sourceWindowId = currentWindow.id;
   }
 
-  const tabs = await browser.tabs.query(query);
+  const tabs = await callApi(extensionApi.tabs.query.bind(extensionApi.tabs), query);
 
   state.allTabs = tabs
     .filter((tab) => !tab.hidden)
@@ -585,6 +648,25 @@ function bindEvents() {
       event.preventDefault();
       closeTab(selectedTab.id).catch((error) => {
         console.error("Failed to close tab", error);
+      });
+      return;
+    }
+
+    if (event.key.toLowerCase() === "h" && !event.metaKey && !event.ctrlKey && !event.altKey) {
+      if (document.activeElement === elements.searchInput) {
+        return;
+      }
+
+      const selectedIndex = getSelectedIndex();
+      const selectedTab = state.filteredTabs[selectedIndex];
+      if (!selectedTab) {
+        return;
+      }
+
+      event.preventDefault();
+      hibernateTab(selectedTab.id).catch((error) => {
+        console.error("Failed to hibernate tab", error);
+        elements.resultsSummary.textContent = "Unable to hibernate the selected tab.";
       });
     }
   });
