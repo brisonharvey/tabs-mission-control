@@ -46,8 +46,8 @@
       <section class="status-bar" aria-live="polite">
         <span id="results-summary">Loading tabs…</span>
         <span class="keyboard-hint">
-          Arrows move, Enter opens, Esc closes, Cmd/Ctrl + Left/Right changes
-          pages
+          Arrows move, Enter opens, X closes tab, Esc closes view, Cmd/Ctrl +
+          Left/Right changes pages
         </span>
       </section>
 
@@ -74,7 +74,10 @@
           </button>
           <div class="preview-backdrop"></div>
           <div class="preview-content">
-            <div class="preview-favicon"></div>
+            <div class="preview-favicon-shell">
+              <img class="preview-favicon" alt="" width="52" height="52" />
+              <span class="preview-favicon-fallback"></span>
+            </div>
             <span class="preview-domain"></span>
           </div>
         </div>

@@ -29,8 +29,8 @@ firefox-mission-control/
 
 ## Default shortcut
 
-- Windows / Linux: `Ctrl+Shift+Space`
-- macOS: `Command+Shift+Space`
+- Windows / Linux: `Ctrl+Shift+Y`
+- macOS: `Command+Shift+Y`
 
 You can customize extension shortcuts from Firefox's add-on shortcut settings if this conflicts with another binding.
 

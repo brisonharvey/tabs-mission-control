@@ -264,7 +264,7 @@ input {
   padding: 20px;
 }
 
-.preview-favicon {
+.preview-favicon-shell {
   width: 52px;
   height: 52px;
   border-radius: 16px;
@@ -272,9 +272,29 @@ input {
   display: grid;
   place-items: center;
   box-shadow: var(--shadow-soft);
+  overflow: hidden;
+  position: relative;
+}
+
+.preview-favicon {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+.preview-favicon-fallback {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
   color: color-mix(in srgb, black 25%, var(--tab-accent) 75%);
   font-weight: 700;
   font-size: 1.15rem;
+}
+
+.preview-favicon-shell.has-image .preview-favicon-fallback {
+  display: none;
 }
 
 .preview-domain {

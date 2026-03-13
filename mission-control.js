@@ -316,6 +316,8 @@ function render() {
 
     const favicon = card.querySelector(".favicon");
     const previewFavicon = card.querySelector(".preview-favicon");
+    const previewFaviconShell = card.querySelector(".preview-favicon-shell");
+    const previewFaviconFallback = card.querySelector(".preview-favicon-fallback");
     const previewDomain = card.querySelector(".preview-domain");
     const title = card.querySelector(".tab-title");
     const url = card.querySelector(".tab-url");
@@ -332,12 +334,22 @@ function render() {
     // Firefox does not offer a fast, non-disruptive way to capture thumbnail
     // previews for every tab in the current window, so the MVP uses a styled
     // fallback preview shell instead of attempting fake live thumbnails.
-    previewFavicon.textContent = getPreviewLabel(tab);
+    previewFaviconFallback.textContent = getPreviewLabel(tab);
     previewDomain.textContent = getTabHost(tab.url || "");
 
     favicon.src = tab.favIconUrl || FALLBACK_ICON;
     favicon.addEventListener("error", () => {
       favicon.src = FALLBACK_ICON;
+    });
+
+    previewFaviconShell.classList.remove("has-image");
+    previewFavicon.src = tab.favIconUrl || FALLBACK_ICON;
+    previewFavicon.addEventListener("load", () => {
+      previewFaviconShell.classList.add("has-image");
+    });
+    previewFavicon.addEventListener("error", () => {
+      previewFaviconShell.classList.remove("has-image");
+      previewFavicon.removeAttribute("src");
     });
 
     card.addEventListener("click", () => {
@@ -555,6 +567,24 @@ function bindEvents() {
       event.preventDefault();
       activateTab(selectedTab.id).catch((error) => {
         console.error("Failed to activate tab", error);
+      });
+      return;
+    }
+
+    if (event.key.toLowerCase() === "x" && !event.metaKey && !event.ctrlKey && !event.altKey) {
+      if (document.activeElement === elements.searchInput) {
+        return;
+      }
+
+      const selectedIndex = getSelectedIndex();
+      const selectedTab = state.filteredTabs[selectedIndex];
+      if (!selectedTab) {
+        return;
+      }
+
+      event.preventDefault();
+      closeTab(selectedTab.id).catch((error) => {
+        console.error("Failed to close tab", error);
       });
     }
   });
