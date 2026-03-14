@@ -676,13 +676,98 @@ async function hibernateTab(tabId) {
 }
 
 function handleArrowNavigation(key) {
-  const selectedIndex = getSelectedIndex();
-  if (selectedIndex < 0) {
+  const cards = [...elements.windowGroups.querySelectorAll(".tab-card")];
+  if (!cards.length) {
     return;
   }
 
-  const delta = key === "ArrowLeft" || key === "ArrowUp" ? -1 : 1;
-  setSelection(selectedIndex + delta);
+  const selectedCard =
+    elements.windowGroups.querySelector(
+      `.tab-card[data-tab-id="${String(state.selectedTabId)}"]`
+    ) ?? cards[0];
+  const selectedCardIndex = cards.indexOf(selectedCard);
+
+  if (selectedCardIndex < 0) {
+    return;
+  }
+
+  if (key === "ArrowLeft" || key === "ArrowRight") {
+    const delta = key === "ArrowLeft" ? -1 : 1;
+    setSelection(selectedCardIndex + delta);
+    return;
+  }
+
+  const cardLayouts = cards.map((card, index) => {
+    const rect = card.getBoundingClientRect();
+    return {
+      card,
+      index,
+      top: rect.top,
+      height: rect.height,
+      centerX: rect.left + rect.width / 2
+    };
+  });
+
+  const rowThreshold = Math.max(
+    24,
+    Math.min(
+      ...cardLayouts.map((layout) => Math.max(24, Math.round(layout.height * 0.45)))
+    )
+  );
+  const rows = [];
+
+  cardLayouts.forEach((layout) => {
+    const existingRow = rows.find((row) => Math.abs(row.top - layout.top) <= rowThreshold);
+    if (existingRow) {
+      existingRow.cards.push(layout);
+      existingRow.top = Math.min(existingRow.top, layout.top);
+      return;
+    }
+
+    rows.push({
+      top: layout.top,
+      cards: [layout]
+    });
+  });
+
+  rows.sort((left, right) => left.top - right.top);
+  rows.forEach((row) => {
+    row.cards.sort((left, right) => left.centerX - right.centerX);
+  });
+
+  const selectedLayout = cardLayouts[selectedCardIndex];
+  const selectedRowIndex = rows.findIndex((row) =>
+    row.cards.some((layout) => layout.index === selectedLayout.index)
+  );
+
+  if (selectedRowIndex < 0) {
+    return;
+  }
+
+  const movingDown = key === "ArrowDown";
+  const targetRow = rows[selectedRowIndex + (movingDown ? 1 : -1)];
+
+  if (!targetRow) {
+    return;
+  }
+
+  const nextCard = targetRow.cards
+    .slice()
+    .sort((left, right) => {
+      const horizontalDistanceDifference =
+        Math.abs(left.centerX - selectedLayout.centerX) -
+        Math.abs(right.centerX - selectedLayout.centerX);
+
+      if (horizontalDistanceDifference !== 0) {
+        return horizontalDistanceDifference;
+      }
+
+      return left.index - right.index;
+    })[0];
+
+  if (nextCard) {
+    setSelection(nextCard.index);
+  }
 }
 
 function getDropPosition(card, event) {
