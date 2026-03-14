@@ -1,9 +1,13 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 96 96">
-  <rect width="96" height="96" rx="24" fill="#1463ff" />
-  <path
-    d="M21 30.5A9.5 9.5 0 0 1 30.5 21h35A9.5 9.5 0 0 1 75 30.5v35A9.5 9.5 0 0 1 65.5 75h-35A9.5 9.5 0 0 1 21 65.5Z"
-    fill="#f8fbff"
-    opacity=".94"
-  />
-  <path d="M31.5 37h33v6h-33Zm0 12h22v12h-22Z" fill="#1463ff" />
+  <defs>
+    <linearGradient id="bg96" x1="12" y1="9" x2="87" y2="90">
+      <stop offset="0" stop-color="#0f5fe8" />
+      <stop offset="1" stop-color="#0a2342" />
+    </linearGradient>
+  </defs>
+  <rect width="96" height="96" rx="24" fill="url(#bg96)" />
+  <path d="M35 22h36a8 8 0 0 1 8 8v31H43.1A8.1 8.1 0 0 1 35 52.9Z" fill="#5fa6ff" opacity=".34" />
+  <path d="M21 31a7 7 0 0 1 7-7h36a7 7 0 0 1 7 7v36a7 7 0 0 1-7 7H28a7 7 0 0 1-7-7Z" fill="#f8fbff" />
+  <path d="M28.5 34.5h35v6H28.5Zm0 11.5H54v15H28.5Z" fill="#0f5fe8" />
+  <circle cx="66.5" cy="64.5" r="7" fill="#ffb84d" />
 </svg>
