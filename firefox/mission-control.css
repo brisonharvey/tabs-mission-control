@@ -390,6 +390,16 @@ button {
   );
 }
 
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme]) .tab-card.is-hibernated .tab-card-content {
+    background: linear-gradient(
+      180deg,
+      rgba(16, 24, 37, 0.96),
+      color-mix(in srgb, #101827 82%, var(--tab-accent) 18%)
+    );
+  }
+}
+
 .tab-card.is-hibernated .tab-title,
 .tab-card.is-hibernated .tab-url,
 .tab-card.is-hibernated .preview-domain {
@@ -411,6 +421,16 @@ button {
     rgba(18, 27, 42, 0.95),
     color-mix(in srgb, #111b2d 82%, var(--tab-accent) 18%)
   );
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme]) .tab-card.is-active .tab-card-content {
+    background: linear-gradient(
+      180deg,
+      rgba(18, 27, 42, 0.95),
+      color-mix(in srgb, #111b2d 82%, var(--tab-accent) 18%)
+    );
+  }
 }
 
 .preview-shell,
@@ -440,6 +460,17 @@ button {
   );
 }
 
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme]) .preview-shell {
+    border-color: rgba(255, 255, 255, 0.08);
+    background: linear-gradient(
+      135deg,
+      color-mix(in srgb, #172132 76%, var(--tab-accent) 24%),
+      color-mix(in srgb, #0f1727 82%, var(--tab-accent) 18%)
+    );
+  }
+}
+
 .preview-backdrop {
   position: absolute;
   inset: 0;
@@ -460,6 +491,18 @@ button {
       rgba(255, 255, 255, 0.03),
       color-mix(in srgb, #0f1727 72%, var(--tab-accent) 28%)
     );
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme]) .preview-backdrop {
+    background:
+      linear-gradient(140deg, rgba(255, 255, 255, 0.04), transparent 58%),
+      linear-gradient(
+        180deg,
+        rgba(255, 255, 255, 0.03),
+        color-mix(in srgb, #0f1727 72%, var(--tab-accent) 28%)
+      );
+  }
 }
 
 .preview-content {
