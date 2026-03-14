@@ -340,8 +340,12 @@ button {
 }
 
 .tab-card.is-selected {
-  border-color: var(--tab-accent-border);
-  box-shadow: 0 0 0 4px var(--tab-accent-soft);
+  border-color: color-mix(in srgb, white 18%, var(--tab-accent) 82%);
+  transform: translateY(-2px) scale(1.01);
+  box-shadow:
+    0 0 0 2px color-mix(in srgb, white 28%, var(--tab-accent) 72%),
+    0 0 0 7px var(--tab-accent-soft),
+    0 16px 34px var(--tab-accent-glow);
 }
 
 .tab-card.is-dragging {
