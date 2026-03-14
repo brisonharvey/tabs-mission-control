@@ -39,6 +39,27 @@
   --active-ring: rgba(125, 180, 255, 0.42);
 }
 
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme]) {
+    color-scheme: dark;
+    --bg: #0b1220;
+    --bg-accent: radial-gradient(circle at top left, rgba(81, 137, 255, 0.2), transparent 30%),
+      radial-gradient(circle at top right, rgba(58, 191, 149, 0.18), transparent 22%),
+      linear-gradient(180deg, #101827 0%, #060b14 100%);
+    --panel: rgba(10, 18, 31, 0.72);
+    --panel-strong: rgba(15, 24, 40, 0.9);
+    --panel-border: rgba(143, 169, 206, 0.14);
+    --text: #eef5ff;
+    --muted: #a0b2c9;
+    --muted-strong: #c1d1e6;
+    --shadow: 0 16px 40px rgba(1, 8, 20, 0.42);
+    --shadow-soft: 0 10px 28px rgba(1, 8, 20, 0.3);
+    --accent: #7db4ff;
+    --accent-soft: rgba(125, 180, 255, 0.14);
+    --active-ring: rgba(125, 180, 255, 0.42);
+  }
+}
+
 * {
   box-sizing: border-box;
 }

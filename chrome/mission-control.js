@@ -824,14 +824,14 @@ async function loadThemePreference() {
 }
 
 function applyTheme() {
-  const resolvedTheme =
-    state.themePreference === "system"
-      ? systemThemeQuery?.matches
-        ? "dark"
-        : "light"
-      : state.themePreference;
+  if (state.themePreference === "system") {
+    document.documentElement.removeAttribute("data-theme");
+  } else {
+    document.documentElement.dataset.theme = state.themePreference;
+  }
 
-  document.documentElement.dataset.theme = resolvedTheme;
+  document.documentElement.style.colorScheme =
+    state.themePreference === "system" ? "light dark" : state.themePreference;
   renderThemeButtons();
 }
 
