@@ -99,6 +99,7 @@ function isSafeFaviconUrl(faviconUrl) {
       "chrome-extension:",
       "data:",
       "file:",
+      "moz-anno:",
       "moz-extension:",
       "resource:"
     ].includes(parsed.protocol);

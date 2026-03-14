@@ -34,7 +34,8 @@ Tab Mission Control does not collect, sell, transfer, sync, or transmit personal
 - The extension does not call developer-operated servers or third-party APIs
 - It ships with no remotely hosted code
 - It has no host permissions and no content scripts
-- The popup only renders safe local or browser-provided favicon URLs; otherwise it falls back to the bundled icon instead of requesting remote favicon resources
+- In Chrome, favicon rendering uses the browser's local `/_favicon/` resource instead of requesting site favicons directly
+- In Firefox, the popup only renders safe local or browser-provided favicon URLs; otherwise it falls back to the bundled icon instead of requesting remote favicon resources
 
 ## Chrome Web Store Limited Use Statement
 

@@ -4,6 +4,7 @@
   "version": "1.0.0",
   "description": "A keyboard-first visual overview of open tabs across Chrome windows.",
   "permissions": [
+    "favicon",
     "tabs",
     "tabGroups",
     "sessions",

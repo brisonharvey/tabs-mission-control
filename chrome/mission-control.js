@@ -108,8 +108,37 @@ function isSafeFaviconUrl(faviconUrl) {
   }
 }
 
-function getRenderableFaviconUrl(faviconUrl) {
-  return isSafeFaviconUrl(faviconUrl) ? faviconUrl : FALLBACK_ICON;
+function isWebPageUrl(pageUrl) {
+  if (!pageUrl) {
+    return false;
+  }
+
+  try {
+    const parsed = new URL(pageUrl);
+    return parsed.protocol === "http:" || parsed.protocol === "https:";
+  } catch (error) {
+    return false;
+  }
+}
+
+function getChromeLocalFaviconUrl(pageUrl, size = 32) {
+  if (!isWebPageUrl(pageUrl)) {
+    return null;
+  }
+
+  const faviconUrl = new URL(extensionApi.runtime.getURL("/_favicon/"));
+  faviconUrl.searchParams.set("pageUrl", pageUrl);
+  faviconUrl.searchParams.set("size", String(size));
+  return faviconUrl.toString();
+}
+
+function getRenderableFaviconUrl(faviconUrl, pageUrl, size = 32) {
+  if (isSafeFaviconUrl(faviconUrl)) {
+    return faviconUrl;
+  }
+
+  const chromeLocalFaviconUrl = getChromeLocalFaviconUrl(pageUrl, size);
+  return chromeLocalFaviconUrl || FALLBACK_ICON;
 }
 
 function getPreviewLabel(tab) {
@@ -405,7 +434,7 @@ function renderRecentSessions() {
     title.textContent = session.title || "Recently closed tab";
     url.textContent = getShortUrl(session.url || "");
 
-    icon.src = getRenderableFaviconUrl(session.favIconUrl);
+    icon.src = getRenderableFaviconUrl(session.favIconUrl, session.url, 18);
     icon.addEventListener("error", () => {
       icon.src = FALLBACK_ICON;
     });
@@ -456,13 +485,13 @@ function renderTabCard(tab) {
     tabGroupPill.removeAttribute("title");
   }
 
-  favicon.src = getRenderableFaviconUrl(tab.favIconUrl);
+  favicon.src = getRenderableFaviconUrl(tab.favIconUrl, tab.url, 18);
   favicon.addEventListener("error", () => {
     favicon.src = FALLBACK_ICON;
   });
 
   previewFaviconShell.classList.remove("has-image");
-  previewFavicon.src = getRenderableFaviconUrl(tab.favIconUrl);
+  previewFavicon.src = getRenderableFaviconUrl(tab.favIconUrl, tab.url, 52);
   previewFavicon.addEventListener("load", () => {
     previewFaviconShell.classList.add("has-image");
   });
