@@ -85,6 +85,32 @@ function getShortUrl(url) {
   }
 }
 
+function isSafeFaviconUrl(faviconUrl) {
+  if (!faviconUrl) {
+    return false;
+  }
+
+  try {
+    const parsed = new URL(faviconUrl);
+    return [
+      "about:",
+      "blob:",
+      "chrome:",
+      "chrome-extension:",
+      "data:",
+      "file:",
+      "moz-extension:",
+      "resource:"
+    ].includes(parsed.protocol);
+  } catch (error) {
+    return false;
+  }
+}
+
+function getRenderableFaviconUrl(faviconUrl) {
+  return isSafeFaviconUrl(faviconUrl) ? faviconUrl : FALLBACK_ICON;
+}
+
 function getPreviewLabel(tab) {
   const title = tab.title?.trim();
   if (title) {
@@ -288,7 +314,7 @@ async function resolveAccentForTab(tab, card) {
   const fallbackAccent = getFallbackAccent(tab);
   applyAccent(card, fallbackAccent);
 
-  if (!tab.favIconUrl) {
+  if (!isSafeFaviconUrl(tab.favIconUrl)) {
     accentCache.set(tab.id, fallbackAccent);
     return;
   }
@@ -364,7 +390,7 @@ function renderRecentSessions() {
     title.textContent = session.title || "Recently closed tab";
     url.textContent = getShortUrl(session.url || "");
 
-    icon.src = session.favIconUrl || FALLBACK_ICON;
+    icon.src = getRenderableFaviconUrl(session.favIconUrl);
     icon.addEventListener("error", () => {
       icon.src = FALLBACK_ICON;
     });
@@ -404,13 +430,13 @@ function renderTabCard(tab) {
   previewFaviconFallback.textContent = getPreviewLabel(tab);
   previewDomain.textContent = getTabHost(tab.url || "");
 
-  favicon.src = tab.favIconUrl || FALLBACK_ICON;
+  favicon.src = getRenderableFaviconUrl(tab.favIconUrl);
   favicon.addEventListener("error", () => {
     favicon.src = FALLBACK_ICON;
   });
 
   previewFaviconShell.classList.remove("has-image");
-  previewFavicon.src = tab.favIconUrl || FALLBACK_ICON;
+  previewFavicon.src = getRenderableFaviconUrl(tab.favIconUrl);
   previewFavicon.addEventListener("load", () => {
     previewFaviconShell.classList.add("has-image");
   });

@@ -2,6 +2,10 @@
 
 Tab Mission Control is a browser-neutral tab overview project with separate Firefox and Chrome extension builds.
 
+## Privacy
+
+This project is local-only tab management software. It does not collect analytics or telemetry, does not send tab data to the developer, and stores only the selected theme preference in local extension storage. See [PRIVACY.md](/Users/brisonharvey/GitHub/Tab-Mission-Control/PRIVACY.md).
+
 ## Project structure
 
 ```text
