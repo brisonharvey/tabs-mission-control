@@ -71,11 +71,36 @@
       </header>
 
       <section class="status-bar" aria-live="polite">
-        <span id="results-summary">Loading tabs…</span>
-        <span class="keyboard-hint">
-          Arrows move, Enter opens, X closes tab, H hibernates tab, Esc closes
-          view, drag cards to reorder or move them between windows
-        </span>
+        <div class="status-copy">
+          <span id="results-summary">Loading tabs…</span>
+          <span class="status-note">
+            Drag cards to reorder tabs or move them between windows.
+          </span>
+        </div>
+
+        <div class="shortcut-bar" aria-label="Keyboard shortcuts">
+          <div class="shortcut-callout">
+            <span class="shortcut-label">Launch</span>
+            <div class="shortcut-callout-main">
+              <span class="shortcut-callout-title">Open Mission Control</span>
+              <div id="launch-shortcut" class="shortcut-combo" aria-label="Launch shortcut">
+                <kbd id="launch-shortcut-modifier">Ctrl</kbd>
+                <span class="shortcut-plus" aria-hidden="true">+</span>
+                <kbd>Shift</kbd>
+                <span class="shortcut-plus" aria-hidden="true">+</span>
+                <kbd>Y</kbd>
+              </div>
+            </div>
+          </div>
+
+          <div class="shortcut-list" aria-label="In-view keyboard actions">
+            <span class="shortcut-chip"><kbd>Arrows</kbd><span>Move</span></span>
+            <span class="shortcut-chip"><kbd>Enter</kbd><span>Open</span></span>
+            <span class="shortcut-chip"><kbd>X</kbd><span>Close</span></span>
+            <span class="shortcut-chip"><kbd>H</kbd><span>Hibernate</span></span>
+            <span class="shortcut-chip"><kbd>Esc</kbd><span>Close view</span></span>
+          </div>
+        </div>
       </section>
 
       <main class="main-layout">

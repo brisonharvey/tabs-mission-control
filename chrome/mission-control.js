@@ -25,6 +25,7 @@ const elements = {
   searchInput: document.getElementById("search-input"),
   refreshTabsButton: document.getElementById("refresh-tabs"),
   refreshSessionsButton: document.getElementById("refresh-sessions"),
+  launchShortcutModifier: document.getElementById("launch-shortcut-modifier"),
   resultsSummary: document.getElementById("results-summary"),
   emptyState: document.getElementById("empty-state"),
   windowGroups: document.getElementById("window-groups"),
@@ -66,6 +67,19 @@ function parseSourceWindowId() {
   const params = new URLSearchParams(window.location.search);
   const rawValue = params.get("sourceWindowId");
   return rawValue ? Number(rawValue) : null;
+}
+
+function isMacPlatform() {
+  const platform = navigator.userAgentData?.platform || navigator.platform || "";
+  return /mac/i.test(platform);
+}
+
+function renderLaunchShortcut() {
+  if (!elements.launchShortcutModifier) {
+    return;
+  }
+
+  elements.launchShortcutModifier.textContent = isMacPlatform() ? "Command" : "Ctrl";
 }
 
 function getTabHost(url) {
@@ -1219,6 +1233,7 @@ function bindEvents() {
 
 async function initialize() {
   state.sourceWindowId = parseSourceWindowId();
+  renderLaunchShortcut();
   bindEvents();
   await loadThemePreference();
   await refreshView({
