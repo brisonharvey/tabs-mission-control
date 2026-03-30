@@ -264,6 +264,43 @@ button {
   margin-bottom: 20px;
 }
 
+.group-controls {
+  display: flex;
+  justify-content: space-between;
+  gap: 14px;
+  align-items: center;
+  flex-wrap: wrap;
+  margin-bottom: 14px;
+  padding: 16px 18px;
+  background: var(--panel);
+  border: 1px solid var(--panel-border);
+  border-radius: 24px;
+  backdrop-filter: blur(18px);
+  box-shadow: var(--shadow-soft);
+}
+
+.group-controls-copy {
+  display: grid;
+  gap: 4px;
+}
+
+.group-controls-label {
+  color: var(--text);
+  font-size: 0.9rem;
+  font-weight: 700;
+}
+
+.group-controls-summary {
+  color: var(--muted);
+  font-size: 0.85rem;
+}
+
+.group-controls-actions {
+  display: inline-flex;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
 .shortcut-panel {
   width: 100%;
   background: var(--panel);
@@ -475,36 +512,39 @@ button {
   grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
 }
 
-.tab-card {
-  --tab-accent: rgb(20, 99, 255);
-  --tab-accent-soft: rgba(20, 99, 255, 0.12);
-  --tab-accent-glow: rgba(20, 99, 255, 0.2);
-  --tab-accent-border: rgba(20, 99, 255, 0.32);
+.overview-card {
   width: 100%;
   text-align: left;
   border: 1px solid transparent;
   border-radius: var(--card-radius);
-  padding: 0;
-  background: transparent;
   color: inherit;
   cursor: pointer;
   transition: transform var(--transition), box-shadow var(--transition),
     border-color var(--transition), opacity var(--transition);
 }
 
-.tab-card:hover,
-.tab-card:focus-visible {
+.overview-card:hover,
+.overview-card:focus-visible {
   outline: none;
   transform: translateY(-2px) scale(1.01);
 }
 
-.tab-card.is-selected {
+.overview-card.is-selected {
   border-color: color-mix(in srgb, white 18%, var(--tab-accent) 82%);
   transform: translateY(-2px) scale(1.01);
   box-shadow:
     0 0 0 2px color-mix(in srgb, white 28%, var(--tab-accent) 72%),
     0 0 0 7px var(--tab-accent-soft),
     0 16px 34px var(--tab-accent-glow);
+}
+
+.tab-card {
+  --tab-accent: rgb(20, 99, 255);
+  --tab-accent-soft: rgba(20, 99, 255, 0.12);
+  --tab-accent-glow: rgba(20, 99, 255, 0.2);
+  --tab-accent-border: rgba(20, 99, 255, 0.32);
+  padding: 0;
+  background: transparent;
 }
 
 .tab-card.is-dragging {
@@ -784,6 +824,7 @@ button {
 }
 
 .active-pill,
+.pinned-pill,
 .hibernate-pill,
 .window-tab-count,
 .recently-closed-action {
@@ -796,6 +837,12 @@ button {
   font-size: 0.75rem;
   font-weight: 700;
   letter-spacing: 0.01em;
+}
+
+.pinned-pill {
+  padding: 2px 6px;
+  background: rgba(255, 193, 7, 0.16);
+  color: #8a5a00;
 }
 
 .active-pill {
@@ -836,6 +883,129 @@ button {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.group-card {
+  --tab-accent: rgb(20, 99, 255);
+  --tab-accent-soft: rgba(20, 99, 255, 0.12);
+  --tab-accent-glow: rgba(20, 99, 255, 0.2);
+  --tab-accent-border: rgba(20, 99, 255, 0.32);
+  background:
+    radial-gradient(circle at top right, color-mix(in srgb, var(--tab-accent) 14%, transparent), transparent 42%),
+    linear-gradient(
+      145deg,
+      color-mix(in srgb, var(--panel-strong) 84%, var(--tab-accent) 16%),
+      color-mix(in srgb, var(--panel) 88%, var(--tab-accent) 12%)
+    );
+}
+
+.group-card-content {
+  min-height: 228px;
+  padding: 18px;
+  border-radius: var(--card-radius);
+  border: 1px solid var(--tab-accent-border);
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.72), rgba(255, 255, 255, 0.32)),
+    transparent;
+  display: grid;
+  gap: 18px;
+}
+
+:root[data-theme="dark"] .group-card-content {
+  background:
+    linear-gradient(180deg, rgba(16, 24, 37, 0.88), rgba(16, 24, 37, 0.5)),
+    transparent;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme]) .group-card-content {
+    background:
+      linear-gradient(180deg, rgba(16, 24, 37, 0.88), rgba(16, 24, 37, 0.5)),
+      transparent;
+  }
+}
+
+.group-card-header,
+.group-card-body,
+.group-meta {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.group-card-body {
+  align-items: flex-start;
+}
+
+.group-meta {
+  justify-content: flex-start;
+  flex-wrap: wrap;
+}
+
+.group-pill,
+.group-count,
+.group-action-hint {
+  display: inline-flex;
+  align-items: center;
+  min-height: 30px;
+  padding: 6px 10px;
+  border-radius: 999px;
+  font-size: 0.77rem;
+  font-weight: 700;
+}
+
+.group-pill {
+  background: color-mix(in srgb, var(--accent-soft) 78%, transparent);
+  color: var(--accent);
+}
+
+.group-count {
+  background: rgba(127, 145, 171, 0.12);
+  color: var(--muted-strong);
+}
+
+.group-action-hint {
+  background: rgba(255, 255, 255, 0.48);
+  color: var(--muted-strong);
+}
+
+.group-favicon-stack {
+  display: flex;
+  align-items: center;
+  min-width: 76px;
+  padding-top: 2px;
+}
+
+.group-favicon {
+  width: 28px;
+  height: 28px;
+  border-radius: 10px;
+  border: 2px solid color-mix(in srgb, var(--panel-strong) 84%, white);
+  box-shadow: var(--shadow-soft);
+  background: var(--panel-strong);
+}
+
+.group-favicon + .group-favicon {
+  margin-left: -8px;
+}
+
+.group-copy {
+  min-width: 0;
+  display: grid;
+  gap: 8px;
+}
+
+.group-title {
+  margin: 0;
+  font-size: 1.08rem;
+}
+
+.group-subtitle {
+  margin: 0;
+  color: var(--muted-strong);
+  font-size: 0.92rem;
+  line-height: 1.45;
 }
 
 .sidebar-panel {
@@ -950,6 +1120,10 @@ button {
   .shortcut-list {
     justify-content: flex-start;
   }
+
+  .group-controls {
+    align-items: flex-start;
+  }
 }
 
 @media (max-width: 640px) {
@@ -971,6 +1145,10 @@ button {
     width: 100%;
   }
 
+  .group-controls-actions {
+    width: 100%;
+  }
+
   .brand-block h1 {
     font-size: 2rem;
   }
@@ -983,5 +1161,11 @@ button {
   .shortcut-chip {
     width: 100%;
     justify-content: space-between;
+  }
+
+  .group-card-header,
+  .group-card-body {
+    align-items: flex-start;
+    flex-direction: column;
   }
 }

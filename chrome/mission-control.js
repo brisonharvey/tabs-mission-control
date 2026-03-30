@@ -13,6 +13,8 @@ const state = {
   windowGroups: [],
   visibleWindowGroups: [],
   selectedItemKey: null,
+  collapsedGroupIds: new Set(),
+  expandedGroupIds: new Set(),
   sourceWindowId: null,
   recentSessions: [],
   themePreference: "system",
@@ -228,10 +230,16 @@ function buildVisibleItemsForGroup(group) {
 
   for (let index = 0; index < group.visibleTabs.length; index += 1) {
     const tab = group.visibleTabs[index];
-    if (
+    const shouldRenderAsGroupCard =
       typeof tab.groupId === "number" &&
       tab.groupId >= 0 &&
-      tab.groupCollapsed
+      (
+        state.collapsedGroupIds.has(tab.groupId) ||
+        (tab.groupCollapsed && !state.expandedGroupIds.has(tab.groupId))
+      );
+
+    if (
+      shouldRenderAsGroupCard
     ) {
       const groupId = tab.groupId;
       const visibleGroupTabs = [];
@@ -557,7 +565,14 @@ function renderGroupControls() {
     )
   )];
 
-  const hasGroups = allGroupIds.length > 0 && Boolean(extensionApi.tabGroups?.update);
+  const expandedInViewCount = collapsedGroupIds.filter((groupId) =>
+    state.expandedGroupIds.has(groupId)
+  ).length;
+  const hiddenCollapsedCount = collapsedGroupIds.length - expandedInViewCount;
+  const locallyCollapsedOpenCount = [...state.collapsedGroupIds].filter(
+    (groupId) => !collapsedGroupIds.includes(groupId)
+  ).length;
+  const hasGroups = allGroupIds.length > 0;
   elements.groupControls.hidden = !hasGroups;
   if (!hasGroups) {
     return;
@@ -565,9 +580,11 @@ function renderGroupControls() {
 
   const expandedCount = allGroupIds.length - collapsedGroupIds.length;
   elements.groupControlsSummary.textContent =
-    `${collapsedGroupIds.length} collapsed, ${expandedCount} expanded across ${allGroupIds.length} groups.`;
-  elements.expandAllGroupsButton.disabled = collapsedGroupIds.length === 0;
-  elements.collapseAllGroupsButton.disabled = allGroupIds.length === 0 || expandedCount === 0;
+    `${hiddenCollapsedCount + locallyCollapsedOpenCount} collapsed cards, ${expandedInViewCount} expanded from browser-collapsed groups, ${expandedCount} open in the browser.`;
+  elements.expandAllGroupsButton.disabled =
+    hiddenCollapsedCount === 0 && locallyCollapsedOpenCount === 0;
+  elements.collapseAllGroupsButton.disabled =
+    state.collapsedGroupIds.size === allGroupIds.length;
 }
 
 function renderTabCard(tab) {
@@ -579,7 +596,7 @@ function renderTabCard(tab) {
   const previewDomain = card.querySelector(".preview-domain");
   const title = card.querySelector(".tab-title");
   const url = card.querySelector(".tab-url");
-  const tabGroupPill = card.querySelector(".tab-group-pill");
+  const pinnedPill = card.querySelector(".pinned-pill");
   const closeButton = card.querySelector(".close-button");
 
   card.dataset.itemKey = getItemKey({
@@ -598,16 +615,7 @@ function renderTabCard(tab) {
   url.textContent = getShortUrl(tab.url || "");
   previewFaviconFallback.textContent = getPreviewLabel(tab);
   previewDomain.textContent = getTabHost(tab.url || "");
-
-  if (tab.groupId >= 0) {
-    tabGroupPill.hidden = false;
-    tabGroupPill.textContent = getTabGroupLabel(tab);
-    tabGroupPill.title = getTabGroupLabel(tab);
-  } else {
-    tabGroupPill.hidden = true;
-    tabGroupPill.textContent = "";
-    tabGroupPill.removeAttribute("title");
-  }
+  pinnedPill.hidden = !tab.pinned;
 
   favicon.src = getRenderableFaviconUrl(tab.favIconUrl, tab.url, 18);
   favicon.addEventListener("error", () => {
@@ -687,10 +695,15 @@ function renderGroupCard(groupItem) {
 
   groupCount.textContent = `${groupItem.tabs.length} tabs`;
   groupTitle.textContent = groupItem.groupTitle || "Collapsed group";
-  groupSubtitle.textContent =
-    groupItem.discardedCount > 0
+  const query = elements.searchInput.value.trim();
+  const isCollapsedInBrowser = groupItem.tabs.some((tab) => tab.groupCollapsed);
+  groupSubtitle.textContent = query
+    ? `${groupItem.visibleTabs.length} matching tabs in this group`
+    : groupItem.discardedCount > 0
       ? `${groupItem.discardedCount} hibernated, ${groupItem.tabs.length - groupItem.discardedCount} ready to resume`
-      : `${groupItem.visibleTabs.length} matching tabs visible in this group`;
+      : isCollapsedInBrowser
+        ? "Collapsed in the browser. Press Enter to expand."
+        : "Collapsed in Mission Control. Press Enter to expand.";
 
   groupItem.tabs.slice(0, 3).forEach((tab) => {
     const icon = document.createElement("img");
@@ -809,18 +822,38 @@ async function activateTab(tabId) {
   window.close();
 }
 
+function getSelectedItem() {
+  return state.visibleItems.find((item) => getItemKey(item) === state.selectedItemKey) || null;
+}
+
 async function closeTab(tabId) {
   const selectedIndex = getSelectedIndex();
   await callApi(extensionApi.tabs.remove.bind(extensionApi.tabs), tabId);
   accentCache.delete(tabId);
 
-  const fallbackTabId =
-    state.visibleTabs[Math.max(0, selectedIndex - 1)]?.id ??
-    state.visibleTabs[Math.min(state.visibleTabs.length - 1, selectedIndex + 1)]?.id ??
-    null;
+  const fallbackItemKey =
+    state.visibleItems[Math.max(0, selectedIndex - 1)] &&
+    getItemKey(state.visibleItems[Math.max(0, selectedIndex - 1)]);
 
   await refreshView({
-    preferredTabId: fallbackTabId,
+    preferredItemKey: fallbackItemKey ?? null,
+    includeRecentSessions: true
+  });
+}
+
+async function closeGroup(groupItem) {
+  const selectedIndex = getSelectedIndex();
+  const tabIds = groupItem.tabs.map((tab) => tab.id);
+  await callApi(extensionApi.tabs.remove.bind(extensionApi.tabs), tabIds);
+  tabIds.forEach((tabId) => accentCache.delete(tabId));
+
+  const fallbackItemKey =
+    state.visibleItems[Math.max(0, selectedIndex - 1)] &&
+    getItemKey(state.visibleItems[Math.max(0, selectedIndex - 1)]);
+
+  await refreshView({
+    preferredTabId: null,
+    preferredItemKey: fallbackItemKey ?? null,
     includeRecentSessions: true
   });
 }
@@ -855,15 +888,131 @@ async function hibernateTab(tabId) {
   elements.resultsSummary.textContent = "Tab moved into hibernate mode.";
 }
 
+async function hibernateGroup(groupItem) {
+  const eligibleTabs = groupItem.tabs.filter((tab) => !tab.active && !tab.discarded);
+  if (!eligibleTabs.length) {
+    elements.resultsSummary.textContent =
+      "No tabs in this group can be hibernated right now.";
+    return;
+  }
+
+  await Promise.all(
+    eligibleTabs.map((tab) =>
+      callApi(extensionApi.tabs.discard.bind(extensionApi.tabs), tab.id)
+    )
+  );
+
+  await refreshView({
+    preferredTabId: groupItem.tabs[0]?.id ?? null,
+    includeRecentSessions: false
+  });
+  elements.resultsSummary.textContent =
+    `Hibernated ${eligibleTabs.length} tabs in ${groupItem.groupTitle || "that group"}.`;
+}
+
+async function expandGroup(groupId) {
+  const groupItem = state.visibleItems.find(
+    (item) => item.type === "group" && item.groupId === groupId
+  );
+  if (!groupItem) {
+    return;
+  }
+
+  state.collapsedGroupIds.delete(groupId);
+  if (groupItem.tabs.some((tab) => tab.groupCollapsed)) {
+    state.expandedGroupIds.add(groupId);
+  }
+  updateVisibleTabs(groupItem.activeTab?.id ?? groupItem.visibleTabs[0]?.id ?? groupItem.tabs[0]?.id ?? null, null);
+  render();
+  focusSelectedCard();
+}
+
+function getCollapsibleGroupIdForItem(item) {
+  if (!item) {
+    return null;
+  }
+
+  if (item.type === "group") {
+    if (state.collapsedGroupIds.has(item.groupId) || state.expandedGroupIds.has(item.groupId)) {
+      return item.groupId;
+    }
+    return null;
+  }
+
+  if (
+    typeof item.groupId === "number" &&
+    item.groupId >= 0 &&
+    (
+      state.collapsedGroupIds.has(item.groupId) ||
+      (item.groupCollapsed && state.expandedGroupIds.has(item.groupId))
+    )
+  ) {
+    return item.groupId;
+  }
+
+  return null;
+}
+
+async function collapseGroupInView(groupId) {
+  const isExpandedCollapsedGroup = state.expandedGroupIds.has(groupId);
+  const isOpenGroup = state.windowGroups.some((group) =>
+    group.tabs.some((tab) => tab.groupId === groupId)
+  );
+  if (!isExpandedCollapsedGroup && !isOpenGroup) {
+    return;
+  }
+
+  state.expandedGroupIds.delete(groupId);
+  state.collapsedGroupIds.add(groupId);
+  updateVisibleTabs(null, `group:${String(groupId)}`);
+  render();
+  focusSelectedCard();
+}
+
+async function setAllGroupsCollapsed(collapsed) {
+  const groupIds = [...new Set(
+    state.windowGroups.flatMap((group) =>
+      group.tabs
+        .map((tab) => tab.groupId)
+        .filter((groupId) => typeof groupId === "number" && groupId >= 0)
+    )
+  )];
+
+  if (!groupIds.length) {
+    return;
+  }
+
+  if (collapsed) {
+    state.collapsedGroupIds = new Set(groupIds);
+    state.expandedGroupIds.clear();
+    updateVisibleTabs(null, `group:${String(groupIds[0])}`);
+  } else {
+    state.collapsedGroupIds.clear();
+    groupIds.forEach((groupId) => {
+      const isBrowserCollapsed = state.windowGroups.some((group) =>
+        group.tabs.some((tab) => tab.groupId === groupId && tab.groupCollapsed)
+      );
+      if (isBrowserCollapsed) {
+        state.expandedGroupIds.add(groupId);
+      } else {
+        state.expandedGroupIds.delete(groupId);
+      }
+    });
+    updateVisibleTabs(null, state.selectedItemKey);
+  }
+
+  render();
+}
+
 function handleArrowNavigation(key) {
-  const cards = [...elements.windowGroups.querySelectorAll(".tab-card")];
+  const cards = [...elements.windowGroups.querySelectorAll(".overview-card")];
   if (!cards.length) {
     return;
   }
 
   const selectedCard =
     elements.windowGroups.querySelector(
-      `.tab-card[data-tab-id="${String(state.selectedTabId)}"]`
+      `[data-item-key="${String(state.selectedItemKey)}"]`
     ) ?? cards[0];
   const selectedCardIndex = cards.indexOf(selectedCard);
 
@@ -1249,8 +1398,33 @@ async function loadWindowsAndTabs(options = {}) {
     }))
   );
 
+  const validCollapsedGroupIds = new Set(
+    state.windowGroups.flatMap((group) =>
+      group.tabs
+        .filter((tab) => typeof tab.groupId === "number" && tab.groupId >= 0 && tab.groupCollapsed)
+        .map((tab) => tab.groupId)
+    )
+  );
+  const validGroupIds = new Set(
+    state.windowGroups.flatMap((group) =>
+      group.tabs
+        .map((tab) => tab.groupId)
+        .filter((groupId) => typeof groupId === "number" && groupId >= 0)
+    )
+  );
+  state.expandedGroupIds.forEach((groupId) => {
+    if (!validCollapsedGroupIds.has(groupId)) {
+      state.expandedGroupIds.delete(groupId);
+    }
+  });
+  state.collapsedGroupIds.forEach((groupId) => {
+    if (!validGroupIds.has(groupId)) {
+      state.collapsedGroupIds.delete(groupId);
+    }
+  });
+
   state.allTabs = state.windowGroups.flatMap((group) => group.tabs);
-  updateVisibleTabs(options.preferredTabId ?? state.selectedTabId);
+  updateVisibleTabs(options.preferredTabId ?? null, options.preferredItemKey ?? state.selectedItemKey);
 }
 
 async function refreshView(options = {}) {
@@ -1263,7 +1437,7 @@ async function refreshView(options = {}) {
 
 function bindEvents() {
   elements.searchInput.addEventListener("input", () => {
-    updateVisibleTabs(state.selectedTabId);
+    updateVisibleTabs(null, state.selectedItemKey);
     render();
   });
 
@@ -1276,7 +1450,7 @@ function bindEvents() {
 
   elements.refreshTabsButton.addEventListener("click", () => {
     refreshView({
-      preferredTabId: state.selectedTabId,
+      preferredItemKey: state.selectedItemKey,
       includeRecentSessions: false
     }).catch((error) => {
       console.error("Failed to refresh tabs", error);
@@ -1294,6 +1468,20 @@ function bindEvents() {
         console.error("Failed to refresh recently closed tabs", error);
         elements.resultsSummary.textContent = "Unable to refresh recently closed tabs.";
       });
+  });
+
+  elements.expandAllGroupsButton.addEventListener("click", () => {
+    setAllGroupsCollapsed(false).catch((error) => {
+      console.error("Failed to expand tab groups", error);
+      elements.resultsSummary.textContent = "Unable to expand all tab groups.";
+    });
+  });
+
+  elements.collapseAllGroupsButton.addEventListener("click", () => {
+    setAllGroupsCollapsed(true).catch((error) => {
+      console.error("Failed to collapse tab groups", error);
+      elements.resultsSummary.textContent = "Unable to collapse all tab groups.";
+    });
   });
 
   elements.themeButtons.forEach((button) => {
@@ -1341,19 +1529,22 @@ function bindEvents() {
     }
 
     if (event.key === "Enter") {
-      if (document.activeElement === elements.searchInput && !state.visibleTabs.length) {
+      if (document.activeElement === elements.searchInput && !state.visibleItems.length) {
         return;
       }
 
-      const selectedIndex = getSelectedIndex();
-      const selectedTab = state.visibleTabs[selectedIndex];
-      if (!selectedTab) {
+      const selectedItem = getSelectedItem();
+      if (!selectedItem) {
         return;
       }
 
       event.preventDefault();
-      activateTab(selectedTab.id).catch((error) => {
-        console.error("Failed to activate tab", error);
+      const action =
+        selectedItem.type === "group"
+          ? expandGroup(selectedItem.groupId)
+          : activateTab(selectedItem.id);
+      action.catch((error) => {
+        console.error("Failed to activate selection", error);
       });
       return;
     }
@@ -1363,16 +1554,22 @@ function bindEvents() {
         return;
       }
 
-      const selectedIndex = getSelectedIndex();
-      const selectedTab = state.visibleTabs[selectedIndex];
-      if (!selectedTab) {
+      const selectedItem = getSelectedItem();
+      if (!selectedItem) {
         return;
       }
 
       event.preventDefault();
-      closeTab(selectedTab.id).catch((error) => {
-        console.error("Failed to close tab", error);
-        elements.resultsSummary.textContent = "Unable to close the selected tab.";
+      const action =
+        selectedItem.type === "group"
+          ? closeGroup(selectedItem)
+          : closeTab(selectedItem.id);
+      action.catch((error) => {
+        console.error("Failed to close selection", error);
+        elements.resultsSummary.textContent =
+          selectedItem.type === "group"
+            ? "Unable to close the selected group."
+            : "Unable to close the selected tab.";
       });
       return;
     }
@@ -1382,16 +1579,41 @@ function bindEvents() {
         return;
       }
 
-      const selectedIndex = getSelectedIndex();
-      const selectedTab = state.visibleTabs[selectedIndex];
-      if (!selectedTab) {
+      const selectedItem = getSelectedItem();
+      if (!selectedItem) {
         return;
       }
 
       event.preventDefault();
-      hibernateTab(selectedTab.id).catch((error) => {
-        console.error("Failed to hibernate tab", error);
-        elements.resultsSummary.textContent = "Unable to hibernate the selected tab.";
+      const action =
+        selectedItem.type === "group"
+          ? hibernateGroup(selectedItem)
+          : hibernateTab(selectedItem.id);
+      action.catch((error) => {
+        console.error("Failed to hibernate selection", error);
+        elements.resultsSummary.textContent =
+          selectedItem.type === "group"
+            ? "Unable to hibernate the selected group."
+            : "Unable to hibernate the selected tab.";
+      });
+      return;
+    }
+
+    if (event.key.toLowerCase() === "c" && !event.metaKey && !event.ctrlKey && !event.altKey) {
+      if (document.activeElement === elements.searchInput) {
+        return;
+      }
+
+      const selectedItem = getSelectedItem();
+      const groupId = getCollapsibleGroupIdForItem(selectedItem);
+      if (groupId === null) {
+        return;
+      }
+
+      event.preventDefault();
+      collapseGroupInView(groupId).catch((error) => {
+        console.error("Failed to collapse group in view", error);
+        elements.resultsSummary.textContent = "Unable to collapse that group in the overview.";
       });
     }
   });

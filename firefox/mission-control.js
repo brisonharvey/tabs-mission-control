@@ -430,6 +430,7 @@ function renderTabCard(tab) {
   const previewDomain = card.querySelector(".preview-domain");
   const title = card.querySelector(".tab-title");
   const url = card.querySelector(".tab-url");
+  const pinnedPill = card.querySelector(".pinned-pill");
   const closeButton = card.querySelector(".close-button");
 
   card.dataset.tabId = String(tab.id);
@@ -444,6 +445,7 @@ function renderTabCard(tab) {
   url.textContent = getShortUrl(tab.url || "");
   previewFaviconFallback.textContent = getPreviewLabel(tab);
   previewDomain.textContent = getTabHost(tab.url || "");
+  pinnedPill.hidden = !tab.pinned;
 
   favicon.src = getRenderableFaviconUrl(tab.favIconUrl);
   favicon.addEventListener("error", () => {
