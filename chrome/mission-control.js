@@ -9,9 +9,10 @@ const systemThemeQuery = globalThis.matchMedia?.("(prefers-color-scheme: dark)")
 const state = {
   allTabs: [],
   visibleTabs: [],
+  visibleItems: [],
   windowGroups: [],
   visibleWindowGroups: [],
-  selectedTabId: null,
+  selectedItemKey: null,
   sourceWindowId: null,
   recentSessions: [],
   themePreference: "system",
@@ -25,6 +26,10 @@ const elements = {
   searchInput: document.getElementById("search-input"),
   refreshTabsButton: document.getElementById("refresh-tabs"),
   refreshSessionsButton: document.getElementById("refresh-sessions"),
+  groupControls: document.getElementById("group-controls"),
+  groupControlsSummary: document.getElementById("group-controls-summary"),
+  expandAllGroupsButton: document.getElementById("expand-all-groups"),
+  collapseAllGroupsButton: document.getElementById("collapse-all-groups"),
   launchShortcutModifier: document.getElementById("launch-shortcut-modifier"),
   resultsSummary: document.getElementById("results-summary"),
   emptyState: document.getElementById("empty-state"),
@@ -33,6 +38,7 @@ const elements = {
   recentlyClosedList: document.getElementById("recently-closed-list"),
   windowGroupTemplate: document.getElementById("window-group-template"),
   tabTemplate: document.getElementById("tab-card-template"),
+  groupTemplate: document.getElementById("group-card-template"),
   recentlyClosedItemTemplate: document.getElementById("recently-closed-item-template"),
   themeButtons: [...document.querySelectorAll(".theme-button")]
 };
@@ -165,40 +171,44 @@ function getPreviewLabel(tab) {
   return host.slice(0, 1).toUpperCase();
 }
 
+function getItemKey(item) {
+  return item.type === "group" ? `group:${String(item.groupId)}` : `tab:${String(item.id)}`;
+}
+
 function getSelectedIndex() {
-  if (!state.visibleTabs.length) {
+  if (!state.visibleItems.length) {
     return -1;
   }
 
-  const selectedIndex = state.visibleTabs.findIndex(
-    (tab) => tab.id === state.selectedTabId
+  const selectedIndex = state.visibleItems.findIndex(
+    (item) => getItemKey(item) === state.selectedItemKey
   );
   if (selectedIndex >= 0) {
     return selectedIndex;
   }
 
-  state.selectedTabId = state.visibleTabs[0].id;
+  state.selectedItemKey = getItemKey(state.visibleItems[0]);
   return 0;
 }
 
 function ensureValidSelection() {
-  if (!state.visibleTabs.length) {
-    state.selectedTabId = null;
+  if (!state.visibleItems.length) {
+    state.selectedItemKey = null;
     return;
   }
 
-  if (!state.visibleTabs.some((tab) => tab.id === state.selectedTabId)) {
-    state.selectedTabId = state.visibleTabs[0].id;
+  if (!state.visibleItems.some((item) => getItemKey(item) === state.selectedItemKey)) {
+    state.selectedItemKey = getItemKey(state.visibleItems[0]);
   }
 }
 
 function setSelection(nextIndex, options = {}) {
-  if (!state.visibleTabs.length) {
+  if (!state.visibleItems.length) {
     return;
   }
 
-  const boundedIndex = Math.max(0, Math.min(nextIndex, state.visibleTabs.length - 1));
-  state.selectedTabId = state.visibleTabs[boundedIndex].id;
+  const boundedIndex = Math.max(0, Math.min(nextIndex, state.visibleItems.length - 1));
+  state.selectedItemKey = getItemKey(state.visibleItems[boundedIndex]);
   renderSelectedState();
 
   if (options.focus !== false) {
@@ -208,12 +218,57 @@ function setSelection(nextIndex, options = {}) {
 
 function focusSelectedCard() {
   const selectedCard = elements.windowGroups.querySelector(
-    `.tab-card[data-tab-id="${String(state.selectedTabId)}"]`
+    `[data-item-key="${String(state.selectedItemKey)}"]`
   );
   selectedCard?.focus();
 }
 
-function updateVisibleTabs(preferredTabId = state.selectedTabId) {
+function buildVisibleItemsForGroup(group) {
+  const items = [];
+
+  for (let index = 0; index < group.visibleTabs.length; index += 1) {
+    const tab = group.visibleTabs[index];
+    if (
+      typeof tab.groupId === "number" &&
+      tab.groupId >= 0 &&
+      tab.groupCollapsed
+    ) {
+      const groupId = tab.groupId;
+      const visibleGroupTabs = [];
+      while (
+        index < group.visibleTabs.length &&
+        group.visibleTabs[index].groupId === groupId
+      ) {
+        visibleGroupTabs.push(group.visibleTabs[index]);
+        index += 1;
+      }
+      index -= 1;
+
+      const allGroupTabs = group.tabs.filter((candidate) => candidate.groupId === groupId);
+      items.push({
+        type: "group",
+        groupId,
+        groupTitle: getTabGroupLabel(tab),
+        groupColor: tab.groupColor,
+        windowId: group.windowId,
+        tabs: allGroupTabs,
+        visibleTabs: visibleGroupTabs,
+        activeTab: allGroupTabs.find((candidate) => candidate.active) || allGroupTabs[0],
+        discardedCount: allGroupTabs.filter((candidate) => candidate.discarded).length
+      });
+      continue;
+    }
+
+    items.push({
+      type: "tab",
+      ...tab
+    });
+  }
+
+  return items;
+}
+
+function updateVisibleTabs(preferredTabId = null, preferredItemKey = state.selectedItemKey) {
   const query = elements.searchInput.value.trim().toLowerCase();
 
   state.visibleWindowGroups = state.windowGroups
@@ -232,31 +287,53 @@ function updateVisibleTabs(preferredTabId = state.selectedTabId) {
 
       return {
         ...group,
-        visibleTabs
+        visibleTabs,
+        visibleItems: buildVisibleItemsForGroup({
+          ...group,
+          visibleTabs
+        })
       };
     })
     .filter((group) => group.visibleTabs.length > 0);
 
   state.visibleTabs = state.visibleWindowGroups.flatMap((group) => group.visibleTabs);
+  state.visibleItems = state.visibleWindowGroups.flatMap((group) => group.visibleItems);
 
-  if (!state.visibleTabs.length) {
-    state.selectedTabId = null;
+  if (!state.visibleItems.length) {
+    state.selectedItemKey = null;
     return;
   }
 
-  const preferredMatch = state.visibleTabs.find((tab) => tab.id === preferredTabId);
-  if (preferredMatch) {
-    state.selectedTabId = preferredMatch.id;
+  const preferredItem = state.visibleItems.find((item) => getItemKey(item) === preferredItemKey);
+  if (preferredItem) {
+    state.selectedItemKey = getItemKey(preferredItem);
     return;
   }
 
-  const activeMatch = state.visibleTabs.find((tab) => tab.active);
+  if (preferredTabId !== null) {
+    const preferredTabItem = state.visibleItems.find((item) => {
+      if (item.type === "group") {
+        return item.tabs.some((tab) => tab.id === preferredTabId);
+      }
+
+      return item.id === preferredTabId;
+    });
+
+    if (preferredTabItem) {
+      state.selectedItemKey = getItemKey(preferredTabItem);
+      return;
+    }
+  }
+
+  const activeMatch = state.visibleItems.find((item) =>
+    item.type === "group" ? item.tabs.some((tab) => tab.active) : item.active
+  );
   if (activeMatch) {
-    state.selectedTabId = activeMatch.id;
+    state.selectedItemKey = getItemKey(activeMatch);
     return;
   }
 
-  state.selectedTabId = state.visibleTabs[0].id;
+  state.selectedItemKey = getItemKey(state.visibleItems[0]);
 }
 
 function hashString(input) {
@@ -464,6 +541,35 @@ function renderRecentSessions() {
   });
 }
 
+function renderGroupControls() {
+  const allGroupIds = [...new Set(
+    state.windowGroups.flatMap((group) =>
+      group.tabs
+        .map((tab) => tab.groupId)
+        .filter((groupId) => typeof groupId === "number" && groupId >= 0)
+    )
+  )];
+  const collapsedGroupIds = [...new Set(
+    state.windowGroups.flatMap((group) =>
+      group.tabs
+        .filter((tab) => typeof tab.groupId === "number" && tab.groupId >= 0 && tab.groupCollapsed)
+        .map((tab) => tab.groupId)
+    )
+  )];
+
+  const hasGroups = allGroupIds.length > 0 && Boolean(extensionApi.tabGroups?.update);
+  elements.groupControls.hidden = !hasGroups;
+  if (!hasGroups) {
+    return;
+  }
+
+  const expandedCount = allGroupIds.length - collapsedGroupIds.length;
+  elements.groupControlsSummary.textContent =
+    `${collapsedGroupIds.length} collapsed, ${expandedCount} expanded across ${allGroupIds.length} groups.`;
+  elements.expandAllGroupsButton.disabled = collapsedGroupIds.length === 0;
+  elements.collapseAllGroupsButton.disabled = allGroupIds.length === 0 || expandedCount === 0;
+}
+
 function renderTabCard(tab) {
   const card = elements.tabTemplate.content.firstElementChild.cloneNode(true);
   const favicon = card.querySelector(".favicon");
@@ -476,13 +582,17 @@ function renderTabCard(tab) {
   const tabGroupPill = card.querySelector(".tab-group-pill");
   const closeButton = card.querySelector(".close-button");
 
+  card.dataset.itemKey = getItemKey({
+    type: "tab",
+    id: tab.id
+  });
   card.dataset.tabId = String(tab.id);
   card.dataset.windowId = String(tab.windowId);
   card.dataset.tabIndex = String(tab.index);
-  card.setAttribute("aria-selected", String(tab.id === state.selectedTabId));
+  card.setAttribute("aria-selected", String(card.dataset.itemKey === state.selectedItemKey));
   card.classList.toggle("is-active", Boolean(tab.active));
   card.classList.toggle("is-hibernated", Boolean(tab.discarded));
-  card.classList.toggle("is-selected", tab.id === state.selectedTabId);
+  card.classList.toggle("is-selected", card.dataset.itemKey === state.selectedItemKey);
 
   title.textContent = tab.title || "Untitled tab";
   url.textContent = getShortUrl(tab.url || "");
@@ -521,7 +631,7 @@ function renderTabCard(tab) {
   });
 
   card.addEventListener("focus", () => {
-    state.selectedTabId = tab.id;
+    state.selectedItemKey = card.dataset.itemKey;
     renderSelectedState();
   });
 
@@ -552,6 +662,61 @@ function renderTabCard(tab) {
 
   applyAccent(card, getFallbackAccent(tab));
   resolveAccentForTab(tab, card);
+  return card;
+}
+
+function renderGroupCard(groupItem) {
+  const card = elements.groupTemplate.content.firstElementChild.cloneNode(true);
+  const groupCount = card.querySelector(".group-count");
+  const groupTitle = card.querySelector(".group-title");
+  const groupSubtitle = card.querySelector(".group-subtitle");
+  const faviconStack = card.querySelector(".group-favicon-stack");
+
+  const itemKey = getItemKey(groupItem);
+  card.dataset.itemKey = itemKey;
+  card.dataset.groupId = String(groupItem.groupId);
+  card.dataset.windowId = String(groupItem.windowId);
+  card.setAttribute("aria-selected", String(itemKey === state.selectedItemKey));
+  card.classList.toggle("is-selected", itemKey === state.selectedItemKey);
+
+  const accentSource = groupItem.activeTab || groupItem.tabs[0];
+  if (accentSource) {
+    applyAccent(card, getFallbackAccent(accentSource));
+    resolveAccentForTab(accentSource, card);
+  }
+
+  groupCount.textContent = `${groupItem.tabs.length} tabs`;
+  groupTitle.textContent = groupItem.groupTitle || "Collapsed group";
+  groupSubtitle.textContent =
+    groupItem.discardedCount > 0
+      ? `${groupItem.discardedCount} hibernated, ${groupItem.tabs.length - groupItem.discardedCount} ready to resume`
+      : `${groupItem.visibleTabs.length} matching tabs visible in this group`;
+
+  groupItem.tabs.slice(0, 3).forEach((tab) => {
+    const icon = document.createElement("img");
+    icon.className = "group-favicon";
+    icon.alt = "";
+    icon.width = 28;
+    icon.height = 28;
+    icon.src = getRenderableFaviconUrl(tab.favIconUrl, tab.url, 28);
+    icon.addEventListener("error", () => {
+      icon.src = FALLBACK_ICON;
+    });
+    faviconStack.appendChild(icon);
+  });
+
+  card.addEventListener("click", () => {
+    expandGroup(groupItem.groupId).catch((error) => {
+      console.error("Failed to expand tab group", error);
+      elements.resultsSummary.textContent = "Unable to expand that tab group.";
+    });
+  });
+
+  card.addEventListener("focus", () => {
+    state.selectedItemKey = itemKey;
+    renderSelectedState();
+  });
+
   return card;
 }
 
@@ -597,8 +762,8 @@ function renderWindowGroups() {
       }
     });
 
-    group.visibleTabs.forEach((tab) => {
-      tabGrid.appendChild(renderTabCard(tab));
+    group.visibleItems.forEach((item) => {
+      tabGrid.appendChild(item.type === "group" ? renderGroupCard(item) : renderTabCard(item));
     });
 
     elements.windowGroups.appendChild(section);
@@ -606,9 +771,9 @@ function renderWindowGroups() {
 }
 
 function renderSelectedState() {
-  const cards = elements.windowGroups.querySelectorAll(".tab-card");
+  const cards = elements.windowGroups.querySelectorAll(".overview-card");
   cards.forEach((card) => {
-    const isSelected = Number(card.dataset.tabId) === state.selectedTabId;
+    const isSelected = card.dataset.itemKey === state.selectedItemKey;
     card.classList.toggle("is-selected", isSelected);
     card.setAttribute("aria-selected", String(isSelected));
   });
@@ -625,6 +790,7 @@ function renderThemeButtons() {
 
 function render() {
   renderSummary();
+  renderGroupControls();
   renderWindowGroups();
   renderRecentSessions();
   renderThemeButtons();
@@ -1239,7 +1405,6 @@ async function initialize() {
   await refreshView({
     includeRecentSessions: true
   });
-  focusSelectedCard();
 }
 
 initialize().catch((error) => {

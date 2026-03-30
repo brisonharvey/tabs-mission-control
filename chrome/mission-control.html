@@ -74,11 +74,42 @@
       </header>
 
       <section class="status-bar">
+        <div
+          id="group-controls"
+          class="group-controls"
+          role="group"
+          aria-label="Tab group controls"
+          hidden
+        >
+          <div class="group-controls-copy">
+            <span class="group-controls-label">Tab groups</span>
+            <span id="group-controls-summary" class="group-controls-summary">
+              Manage collapsed groups across all windows.
+            </span>
+          </div>
+          <div class="group-controls-actions">
+            <button
+              id="expand-all-groups"
+              type="button"
+              class="nav-button nav-button-compact"
+            >
+              Expand all
+            </button>
+            <button
+              id="collapse-all-groups"
+              type="button"
+              class="nav-button nav-button-compact"
+            >
+              Collapse all
+            </button>
+          </div>
+        </div>
+
         <details class="shortcut-panel" open>
           <summary class="shortcut-toggle">
             <span class="shortcut-toggle-title">Keyboard shortcuts</span>
             <span class="shortcut-toggle-copy">
-              Launch, navigate, and manage tabs without leaving the overview.
+              Launch, navigate, and manage tabs and collapsed groups without leaving the overview.
             </span>
           </summary>
 
@@ -99,9 +130,9 @@
 
             <div class="shortcut-list" aria-label="In-view keyboard actions">
               <span class="shortcut-chip"><kbd>Arrows</kbd><span>Move</span></span>
-              <span class="shortcut-chip"><kbd>Enter</kbd><span>Open</span></span>
-              <span class="shortcut-chip"><kbd>X</kbd><span>Close</span></span>
-              <span class="shortcut-chip"><kbd>H</kbd><span>Hibernate</span></span>
+              <span class="shortcut-chip"><kbd>Enter</kbd><span>Open or expand</span></span>
+              <span class="shortcut-chip"><kbd>X</kbd><span>Close tab or group</span></span>
+              <span class="shortcut-chip"><kbd>H</kbd><span>Hibernate tab or group</span></span>
               <span class="shortcut-chip"><kbd>Esc</kbd><span>Close view</span></span>
             </div>
           </div>
@@ -169,7 +200,7 @@
     </template>
 
     <template id="tab-card-template">
-      <article class="tab-card" role="option" tabindex="-1" draggable="true">
+      <article class="overview-card tab-card" role="option" tabindex="-1" draggable="true">
         <div class="preview-shell" aria-hidden="true">
           <button
             type="button"
@@ -200,6 +231,28 @@
           </div>
           <h3 class="tab-title"></h3>
           <p class="tab-url"></p>
+        </div>
+      </article>
+    </template>
+
+    <template id="group-card-template">
+      <article class="overview-card group-card" role="option" tabindex="-1">
+        <div class="group-card-content">
+          <div class="group-card-header">
+            <div class="group-meta">
+              <span class="group-pill">Collapsed group</span>
+              <span class="group-count"></span>
+            </div>
+            <span class="group-action-hint">Enter to expand</span>
+          </div>
+
+          <div class="group-card-body">
+            <div class="group-favicon-stack" aria-hidden="true"></div>
+            <div class="group-copy">
+              <h3 class="group-title"></h3>
+              <p class="group-subtitle"></p>
+            </div>
+          </div>
         </div>
       </article>
     </template>

@@ -1137,7 +1137,6 @@ async function initialize() {
   await refreshView({
     includeRecentSessions: true
   });
-  focusSelectedCard();
 }
 
 initialize().catch((error) => {

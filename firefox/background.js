@@ -9,17 +9,44 @@ function getManagerUrl(sourceWindowId) {
   return url.toString();
 }
 
+async function getLaunchContextWindow() {
+  const windows = await browser.windows.getAll({
+    populate: true,
+    windowTypes: ["normal", "popup"]
+  });
+
+  const normalWindows = windows.filter(
+    (windowInfo) =>
+      windowInfo.type === "normal" &&
+      windowInfo.id !== missionControlWindowId
+  );
+
+  const focusedNormalWindow =
+    normalWindows.find((windowInfo) => windowInfo.focused) || null;
+
+  if (focusedNormalWindow) {
+    return focusedNormalWindow;
+  }
+
+  if (normalWindows.length > 0) {
+    return normalWindows[0];
+  }
+
+  return browser.windows.getLastFocused();
+}
+
 async function openMissionControl() {
   // Firefox extensions cannot render above browser chrome, so the closest
   // Mission Control-style experience is a dedicated popup window sized to the
   // current browser window.
-  const currentWindow = await browser.windows.getLastFocused();
+  const currentWindow = await getLaunchContextWindow();
   const managerUrl = getManagerUrl(currentWindow.id);
 
   if (missionControlWindowId !== null) {
     try {
       await browser.windows.update(missionControlWindowId, {
-        focused: true
+        focused: true,
+        top: 0
       });
 
       const tabs = await browser.tabs.query({
@@ -42,7 +69,7 @@ async function openMissionControl() {
     url: managerUrl,
     type: "popup",
     left: currentWindow.left,
-    top: currentWindow.top,
+    top: 0,
     width: Math.max(900, currentWindow.width ?? 1200),
     height: Math.max(640, currentWindow.height ?? 800)
   });
